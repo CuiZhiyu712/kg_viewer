@@ -139,6 +139,9 @@ def main():
     write(OUTPUT, html)
     # GitHub Pages 等静态托管需要入口文件名为 index.html，顺手出一份
     write(os.path.join(DIST, "index.html"), html)
+    # 关掉 GitHub Pages 的 Jekyll 处理：内联的库里有大量花括号，
+    # 一旦出现 {{ }} 会被 Jekyll 当模板变量吃掉，把 JS 改坏。
+    write(os.path.join(DIST, ".nojekyll"), u"")
 
     size = os.path.getsize(OUTPUT) / 1024.0
     gz = 0
