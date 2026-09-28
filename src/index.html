@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>考公练习追踪看板</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/responsive.css">
+<script>
+/* 第三方库加载器：优先 CDN，失败自动切换备用 CDN。全程不阻塞页面渲染。 */
+(function () {
+  var CDN = {
+    xlsx: [
+      'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+      'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+    ],
+    echarts: [
+      'https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js',
+      'https://unpkg.com/echarts@5.5.1/dist/echarts.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js'
+    ]
+  };
+  function loadSeq(urls, test) {
+    return new Promise(function (resolve) {
+      var i = 0;
+      function next() {
+        if (test()) return resolve(true);
+        if (i >= urls.length) return resolve(false);
+        var s = document.createElement('script');
+        s.src = urls[i++];
+        s.onload = function () { resolve(!!test()); };
+        s.onerror = next;
+        document.head.appendChild(s);
+      }
+      next();
+    });
+  }
+  window.KGLoadLibs = function () {
+    return Promise.all([
+      loadSeq(CDN.xlsx, function () { return !!window.XLSX; }),
+      loadSeq(CDN.echarts, function () { return !!window.echarts; })
+    ]).then(function (r) { return { xlsx: r[0], echarts: r[1] }; });
+  };
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-inner">
+    <div class="brand">
+      <h1 class="brand-title">考公练习追踪看板</h1>
+      <span class="brand-sub">行测套卷 · 本地存储 · 单文件运行</span>
+    </div>
+    <div class="toolbar" id="toolbar">
+      <button type="button" class="btn btn-primary" id="btn-add">+ 新增一套套卷记录</button>
+      <button type="button" class="btn" id="btn-import">导入 XLSX</button>
+      <button type="button" class="btn" id="btn-export">导出 XLSX</button>
+      <button type="button" class="btn" id="btn-backup">数据备份</button>
+      <button type="button" class="btn" id="btn-restore">数据恢复</button>
+      <button type="button" class="btn btn-danger" id="btn-clear">清空记录</button>
+    </div>
+  </div>
+  <div class="lib-banner" id="lib-banner" hidden></div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button type="button" class="tab is-active" data-tab="records">模块一：行测套卷记录</button>
+  <button type="button" class="tab" data-tab="stats">模块二：统计分析</button>
+  <button type="button" class="tab" data-tab="trend">模块三：趋势分析</button>
+  <button type="button" class="tab" data-tab="time">模块四：用时分析</button>
+</nav>
+
+<main class="app-main">
+
+  <!-- ============ 模块一：行测套卷记录 ============ -->
+  <section class="panel is-active" id="panel-records">
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">总体概览</h2>
+      </div>
+      <div class="card-body">
+        <div class="stat-grid" id="overview-cards"></div>
+        <div class="delta-grid" id="overview-deltas"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">目标设置</h2>
+      </div>
+      <div class="card-body">
+        <div class="target-row">
+          <div class="target-group">
+            <div class="target-group-name">击败比</div>
+            <label class="field field-inline">
+              <span class="field-label">目标 %</span>
+              <input type="number" class="input" id="set-defeat-target" min="0" max="100" step="0.1">
+            </label>
+            <label class="field field-inline">
+              <span class="field-label">黄色下限 %</span>
+              <input type="number" class="input" id="set-defeat-warning" min="0" max="100" step="0.1">
+            </label>
+          </div>
+          <div class="target-group">
+            <div class="target-group-name">分数</div>
+            <label class="field field-inline">
+              <span class="field-label">目标</span>
+              <input type="number" class="input" id="set-score-target" min="0" step="0.1">
+            </label>
+            <label class="field field-inline">
+              <span class="field-label">黄色下限</span>
+              <input type="number" class="input" id="set-score-warning" min="0" step="0.1">
+            </label>
+          </div>
+          <div class="target-actions">
+            <button type="button" class="btn btn-primary" id="btn-save-settings">保存目标设置</button>
+            <span class="hint" id="settings-hint"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">数据存储</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="storage-hint"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="storage-row">
+          <div class="storage-info">
+            <div class="storage-status" id="storage-status">正在检查…</div>
+            <div class="storage-path" id="storage-path"></div>
+            <div class="storage-note" id="storage-note"></div>
+          </div>
+          <div class="storage-actions">
+            <button type="button" class="btn btn-primary" id="btn-fs-bind">绑定数据文件夹</button>
+            <button type="button" class="btn" id="btn-fs-write">立即写入</button>
+            <button type="button" class="btn" id="btn-fs-read">从文件读取</button>
+            <button type="button" class="btn btn-ghost" id="btn-fs-unbind">解绑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">套卷列表</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="records-count"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="filter-bar">
+          <label class="field field-inline">
+            <span class="field-label">搜索套卷</span>
+            <input type="search" class="input" id="filter-keyword" placeholder="按试卷名称搜索，如 第29季">
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">日期</span>
+            <input type="date" class="input" id="filter-date-from">
+            <span class="range-sep">-</span>
+            <input type="date" class="input" id="filter-date-to">
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">排序</span>
+            <select class="input" id="sort-key">
+              <option value="date">日期</option>
+              <option value="score">分数</option>
+              <option value="defeatRate">击败比</option>
+            </select>
+            <select class="input" id="sort-dir">
+              <option value="desc">降序</option>
+              <option value="asc">升序</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="button" class="btn btn-ghost" id="btn-filter-reset">重置</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table" id="records-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="records-empty" hidden></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ 模块二：统计分析 ============ -->
+  <section class="panel" id="panel-stats">
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">各模块正确率概览</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="stats-hint"></span>
+          <button type="button" class="btn btn-ghost" id="btn-edit-targets">编辑阶段目标</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="table-scroll">
+          <table class="data-table" id="stats-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="stats-empty" hidden></div>
+        <p class="footnote">状态判定依据「最近一次」正确率：≥ 阶段目标为达标，介于黄色下限与阶段目标之间为还需努力，低于黄色下限为未达标。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">模块正确率变化趋势</h2>
+      </div>
+      <div class="card-body">
+        <div class="chart-switch" id="stats-module-switch"></div>
+        <div class="chart-box" id="chart-stats-module"></div>
+        <div class="chart-placeholder" id="chart-stats-module-empty" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 模块三：趋势分析 ============ -->
+  <section class="panel" id="panel-trend">
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">击败比与分数变化趋势</h2>
+      </div>
+      <div class="card-body">
+        <div class="chart-switch" id="trend-score-switch"></div>
+        <div class="chart-box" id="chart-score"></div>
+        <div class="chart-placeholder" id="chart-score-empty" hidden></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">模块正确率变化趋势</h2>
+      </div>
+      <div class="card-body">
+        <div class="chart-switch" id="trend-module-switch"></div>
+        <div class="chart-box" id="chart-module"></div>
+        <div class="chart-placeholder" id="chart-module-empty" hidden></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">总用时变化趋势</h2>
+      </div>
+      <div class="card-body">
+        <div class="chart-switch" id="trend-time-switch"></div>
+        <div class="chart-box" id="chart-time"></div>
+        <div class="chart-placeholder" id="chart-time-empty" hidden></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ 模块四：用时分析 ============ -->
+  <section class="panel" id="panel-time">
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">总用时达成率</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="time-hint"></span>
+          <button type="button" class="btn btn-ghost" id="btn-edit-timeplan">编辑标准用时</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="stat-grid" id="time-cards"></div>
+        <div class="time-rank-wrap">
+          <div class="time-rank-title">超时排行</div>
+          <div id="time-ranking"></div>
+        </div>
+        <div class="notice notice-info" id="time-plan-note" hidden></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">各模块用时对比</h2>
+      </div>
+      <div class="card-body">
+        <div class="table-scroll">
+          <table class="data-table" id="time-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="time-empty" hidden></div>
+        <p class="footnote">「差值」= 最近一次实际用时 − 标准用时；正数为超时，负数为富余。标准用时可在右上角「编辑标准用时」里自行修改。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">实际用时趋势（含标准用时线）</h2>
+      </div>
+      <div class="card-body">
+        <div class="chart-switch" id="time-analysis-switch"></div>
+        <div class="chart-box" id="chart-time-analysis"></div>
+        <div class="chart-placeholder" id="chart-time-analysis-empty" hidden></div>
+      </div>
+    </div>
+
+  </section>
+
+</main>
+
+<div class="modal-root" id="modal-root"></div>
+<div class="toast-root" id="toast-root"></div>
+
+<input type="file" id="file-xlsx" accept=".xlsx,.xls" hidden>
+<input type="file" id="file-json" accept=".json,application/json" hidden>
+
+<!-- vendor-libs -->
+
+<script src="js/utils.js"></script>
+<script src="js/model.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/filestore.js"></script>
+<script src="js/excel-import.js"></script>
+<script src="js/excel-export.js"></script>
+<script src="js/statistics.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

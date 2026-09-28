@@ -1,0 +1,46 @@
+/* responsive.css —— 1920 / 1440 / 1366 适配，小屏横向滚动 */
+
+@media (max-width: 1600px) {
+  .header-inner, .tabs, .app-main, .lib-banner { padding-left: 22px; padding-right: 22px; }
+  .app-main { padding-bottom: 44px; }
+}
+
+@media (max-width: 1366px) {
+  body { font-size: 13.5px; }
+  .brand-title { font-size: 18.5px; }
+  .header-inner, .tabs, .app-main, .lib-banner { padding-left: 18px; padding-right: 18px; }
+  .tabs { top: 69px; }
+  .card-body { padding: 16px 16px 18px; }
+  .card-head { padding: 12px 16px; }
+  .stat-value { font-size: 23px; }
+  .chart-box { height: 340px; }
+  .toolbar .btn { padding: 7px 12px; font-size: 13px; }
+}
+
+@media (max-width: 1200px) {
+  .header-inner { align-items: flex-start; }
+  .toolbar { width: 100%; }
+  .target-row { gap: 16px; }
+  .target-actions { margin-left: 0; width: 100%; }
+  .filter-bar { gap: 12px; }
+  .filter-actions { margin-left: 0; }
+}
+
+@media (max-width: 900px) {
+  .tabs { position: static; flex-wrap: wrap; padding-top: 10px; }
+  .tab { flex: 1 1 auto; text-align: center; border-radius: var(--radius-sm); }
+  .tab.is-active { border-bottom-color: var(--border); }
+  .modal-backdrop { padding: 16px 10px; }
+  .modal { max-height: calc(100vh - 32px); }
+  .chart-box { height: 300px; }
+  .stat-grid, .delta-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .filter-bar .input[type="search"],
+  .filter-bar .input[type="date"] { width: 100%; }
+  .filter-bar .field-inline { flex-wrap: wrap; }
+  .toolbar .btn { flex: 1 1 auto; }
+}
+
+/* 主表永远允许横向滚动，宁可滚动也不压缩字号 */
+@media (min-width: 901px) {
+  .table-scroll { max-width: 100%; }
+}

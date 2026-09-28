@@ -1,0 +1,24 @@
+# 本地双击用的单文件产物（部署用的是 docs/index.html，那个要提交）
+/考公练习追踪看板.html
+
+# 测试依赖与产物
+devtest/node_modules/
+devtest/shots/
+devtest/_out_*.xlsx
+
+# 绑定数据文件夹后产生的用户数据（各自本地，不进仓库）
+/data/*.json
+/data/*.xlsx
+
+# 原始数据表格：只保留在本地，不进公开仓库
+/套卷复盘*.xlsx
+
+# 编辑器 / 助手本地文件
+.claude/
+.vscode/
+.idea/
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
