@@ -72,6 +72,8 @@
   <button type="button" class="tab" data-tab="stats">模块二：统计分析</button>
   <button type="button" class="tab" data-tab="trend">模块三：趋势分析</button>
   <button type="button" class="tab" data-tab="time">模块四：用时分析</button>
+  <button type="button" class="tab" data-tab="plans">模块五：每日计划</button>
+  <button type="button" class="tab" data-tab="timer">模块六：学习计时</button>
 </nav>
 
 <main class="app-main">
@@ -322,7 +324,168 @@
 
   </section>
 
+  <!-- ============ 模块五：每日计划 ============ -->
+  <section class="panel" id="panel-plans">
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">计划概览</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="plans-hint"></span>
+          <button type="button" class="btn btn-primary" id="btn-add-plan">+ 新增计划</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="stat-grid" id="plans-cards"></div>
+        <div class="chart-switch" id="plans-filter"></div>
+      </div>
+    </div>
+
+    <div class="card" id="plan-today-card">
+      <div class="card-head">
+        <h2 class="card-title" id="plan-today-title">今天</h2>
+      </div>
+      <div class="card-body">
+        <div class="plan-grid" id="plan-today"></div>
+        <div class="empty-state" id="plan-today-empty" hidden></div>
+      </div>
+    </div>
+
+    <div class="card" id="plan-week-card">
+      <div class="card-head">
+        <h2 class="card-title" id="plan-week-title">本周</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="plan-week-hint"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="plan-grid" id="plan-week"></div>
+        <div class="empty-state" id="plan-week-empty" hidden></div>
+      </div>
+    </div>
+
+    <div class="card" id="plan-other-card">
+      <div class="card-head">
+        <h2 class="card-title">往后 / 历史</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="plan-other-hint"></span>
+          <button type="button" class="btn btn-ghost" id="btn-plan-other-toggle">展开</button>
+        </div>
+      </div>
+      <div class="card-body" id="plan-other-body" hidden>
+        <div class="plan-grid" id="plan-other"></div>
+        <div class="empty-state" id="plan-other-empty" hidden></div>
+      </div>
+    </div>
+
+    <div class="card" id="plan-rules-card" hidden>
+      <div class="card-head">
+        <h2 class="card-title">循环计划</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="plan-rules-hint"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="plan-grid" id="plan-rules"></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ 模块六：学习计时 ============ -->
+  <section class="panel" id="panel-timer">
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">开始学习</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="timer-mode-hint"></span>
+          <button type="button" class="btn btn-ghost" id="btn-pomo-config">番茄设置</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="timer-start-area">
+          <div class="timer-start-row">
+            <label class="field">
+              <span class="field-label">选择计划（可不选）</span>
+              <select class="input" id="timer-plan-select"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">标签</span>
+              <input type="text" class="input" id="timer-label" placeholder="自由学习">
+            </label>
+            <label class="field">
+              <span class="field-label">科目</span>
+              <select class="input" id="timer-category"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">计时方式</span>
+              <select class="input" id="timer-mode">
+                <option value="stopwatch">正计时（秒表）</option>
+                <option value="pomodoro">番茄钟</option>
+              </select>
+            </label>
+            <button type="button" class="btn btn-primary btn-start" id="btn-timer-start">▶ 开始计时</button>
+          </div>
+        </div>
+
+        <div id="timer-running-area" hidden>
+          <div class="timer-live">
+            <div class="timer-live-clock" id="timer-live-clock">00:00:00</div>
+            <div class="timer-live-meta" id="timer-live-meta"></div>
+            <div class="timer-live-actions">
+              <button type="button" class="btn" id="btn-timer-pause">暂停</button>
+              <button type="button" class="btn btn-primary" id="btn-timer-stop">结束计时</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">学习时长</h2>
+        <div class="card-head-actions">
+          <span class="hint" id="timer-hint"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="stat-grid" id="timer-cards"></div>
+        <div class="chart-switch" id="timer-dist-switch"></div>
+        <div class="timer-detail">
+          <div class="timeline-wrap">
+            <div class="timer-section-title" id="timeline-title">当天时间线</div>
+            <div class="table-scroll">
+              <table class="data-table" id="session-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="session-empty" hidden></div>
+          </div>
+          <div class="pie-wrap">
+            <div class="timer-section-title" id="dist-title">时长分布</div>
+            <div class="chart-box chart-box-pie" id="chart-dist"></div>
+            <div class="chart-placeholder chart-placeholder-pie" id="chart-dist-empty" hidden></div>
+            <div class="pie-legend" id="dist-legend"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
 </main>
+
+<!-- 全局悬浮计时条：切到任何 Tab 都看得见 -->
+<div class="timer-bar" id="timer-bar" hidden>
+  <span class="timer-dot"></span>
+  <span class="timer-bar-label" id="timer-bar-label">正在计时</span>
+  <span class="timer-bar-phase" id="timer-bar-phase"></span>
+  <span class="timer-bar-clock" id="timer-bar-clock">00:00:00</span>
+  <button type="button" class="btn btn-xs" id="btn-bar-pause">暂停</button>
+  <button type="button" class="btn btn-xs btn-primary" id="btn-bar-stop">结束</button>
+</div>
 
 <div class="modal-root" id="modal-root"></div>
 <div class="toast-root" id="toast-root"></div>
@@ -335,6 +498,8 @@
 <script src="js/utils.js"></script>
 <script src="js/model.js"></script>
 <script src="js/seed.js"></script>
+<script src="js/plans.js"></script>
+<script src="js/timer.js"></script>
 <script src="js/storage.js"></script>
 <script src="js/filestore.js"></script>
 <script src="js/excel-import.js"></script>

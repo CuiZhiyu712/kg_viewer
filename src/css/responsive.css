@@ -16,6 +16,10 @@
   .toolbar .btn { padding: 7px 12px; font-size: 13px; }
 }
 
+@media (max-width: 1100px) {
+  .timer-detail { grid-template-columns: 1fr; gap: 16px; }
+}
+
 @media (max-width: 1200px) {
   /* 不要强行让工具栏换行：1024 宽度下它其实放得下，强行换行会把页头撑到 134px，
      加上吸顶的 Tab 栏要钉住四分之一屏幕。交给 flex-wrap 按实际宽度决定即可。 */
@@ -49,6 +53,21 @@
   /* 缩小栅格最小宽度，让手机上也排得下两列，表单长度减半 */
   .mod-grid, .mod-grid-info { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
   .summary-grid { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+
+  /* 计划卡片：手机上一列 */
+  .plan-grid { grid-template-columns: 1fr; }
+  /* 计时：开始区改单列，计时条占满底部 */
+  .timer-start-row { grid-template-columns: 1fr; }
+  .timer-live-clock { font-size: 40px; }
+  .timer-bar {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    justify-content: space-between;
+  }
+  .timer-bar-label { max-width: none; flex: 1 1 auto; }
+  /* 手机上计时条占满底部，留白要更大 */
+  body.has-timer-bar .app-main { padding-bottom: 150px; }
 
   /* 子模块编辑表（6 列）在小屏上允许横向滚动，而不是把输入框挤到没法用 */
   .mod-block { overflow-x: auto; }

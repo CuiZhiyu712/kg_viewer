@@ -32,6 +32,10 @@ var KG = window.KG || (window.KG = {});
       targets: defaultTargets(),
       timePlan: defaultTimePlan(),
       records: withSeed === false ? [] : clone(KG.Seed.records),
+      plans: [],          // 计划实例（含循环展开出来的每一天）
+      planRules: [],      // 循环规则
+      sessions: [],       // 学习计时记录
+      timer: null,        // 运行中的计时器（运行时状态，也存下来以便刷新后恢复）
       updatedAt: new Date().toISOString()
     };
   }
@@ -68,6 +72,25 @@ var KG = window.KG || (window.KG = {});
     // 标准用时：缺失的模块/子模块用默认值补齐，已有的值原样保留（用户可自行修改）
     state.timePlan = M.normalizeTimePlan(state.timePlan);
     if (!Array.isArray(state.records)) state.records = [];
+    // 番茄钟设置
+    state.settings.pomo = M.normalizePomo(state.settings.pomo);
+    // 学习计时记录
+    if (!Array.isArray(state.sessions)) state.sessions = [];
+    state.sessions.forEach(function (s) { M.normalizeSession(s); });
+    if (state.timer && typeof state.timer !== 'object') state.timer = null;
+    // 计划：补齐两个数组并规整每条记录（派生值算好写回）
+    if (!Array.isArray(state.plans)) state.plans = [];
+    if (!Array.isArray(state.planRules)) state.planRules = [];
+    state.plans.forEach(function (p) { M.normalizePlan(p); });
+    state.planRules.forEach(function (r) {
+      if (!r.id) r.id = U.uuid();
+      r.items = (r.items || []).map(function (it) {
+        return { id: it.id || U.uuid(), text: it.text || '', minutes: U.toNumber(it.minutes), done: false };
+      });
+      r.freq = r.freq === 'weekly' ? 'weekly' : 'daily';
+      r.kind = r.kind === 'week' ? 'week' : 'day';
+      r.contentMode = r.contentMode === 'list' ? 'list' : 'text';
+    });
     return state;
   }
 

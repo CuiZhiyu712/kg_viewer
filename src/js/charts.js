@@ -423,6 +423,64 @@ var KG = window.KG || (window.KG = {});
     };
   }
 
+  /* ================= 今日学习时长分布（饼图） ================= */
+
+  function renderDistribution(id, dist) {
+    // 用秒做数值：百分比与页面上图例的算法完全一致（用分钟会因四舍五入对不上）
+    var data = dist.map(function (d) {
+      return { name: d.name, value: d.seconds };
+    });
+    var totalSec = data.reduce(function (a, b) { return a + b.value; }, 0);
+
+    return {
+      color: ['#2563eb', '#0d9488', '#7c3aed', '#d97706', '#db2777', '#16a34a', '#0891b2', '#dc2626'],
+      tooltip: Object.assign(tooltipBase(), {
+        trigger: 'item',
+        formatter: function (p) {
+          return '<b>' + esc(p.name) + '</b><br>' +
+            M.fmtDuration(p.value) + '（' + p.percent + '%）';
+        }
+      }),
+      legend: { show: false },                 // 用页面上的图例，样式更可控
+      series: [{
+        type: 'pie',
+        radius: ['46%', '72%'],
+        center: ['50%', '50%'],
+        avoidLabelOverlap: true,
+        itemStyle: { borderColor: '#fff', borderWidth: 2 },
+        label: { show: true, formatter: '{d}%', color: COLOR_TEXT, fontSize: 12 },
+        labelLine: { length: 8, length2: 8, lineStyle: { color: COLOR_GRID } },
+        data: data,
+        emphasis: {
+          itemStyle: { shadowBlur: 12, shadowColor: 'rgba(16,24,40,.18)' },
+          label: { fontSize: 14, fontWeight: 'bold' }
+        }
+      }],
+      // 中心显示总时长
+      graphic: totalSec > 0 ? [{
+        type: 'text',
+        left: 'center',
+        top: 'middle',
+        silent: true,
+        style: {
+          text: '合计\n' + M.fmtDuration(totalSec),
+          textAlign: 'center',
+          fill: COLOR_TEXT,
+          fontSize: 12,
+          lineHeight: 17
+        }
+      }] : []
+    };
+  }
+
+  /** 单独销毁某个图表（容器被隐藏时用，避免残留旧图） */
+  function disposeChart(id) {
+    if (registry[id]) {
+      try { registry[id].dispose(); } catch (e) { /* 忽略 */ }
+      delete registry[id];
+    }
+  }
+
   /* ================= 对外 ================= */
 
   /**
@@ -484,6 +542,8 @@ var KG = window.KG || (window.KG = {});
     libReady: libReady,
     renderPanel: renderPanel,
     flushPanel: flushPanel,
+    renderDistribution: function (id, dist) { return apply(id, renderDistribution(id, dist)); },
+    disposeChart: disposeChart,
     resizeAll: resizeAll,
     reset: reset
   };

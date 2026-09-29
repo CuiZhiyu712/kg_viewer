@@ -150,7 +150,7 @@ function cdp(ws) {
   eq(st.safeArea, true, '含安全区域适配（刘海屏/底部横条）');
   eq(st.viewport.indexOf('viewport-fit=cover') >= 0, true, 'viewport 已加 viewport-fit=cover');
   eq(st.rows, 1, '原版功能正常（记录渲染）');
-  eq(st.tabs, 4, '四个页签都在');
+  ok(st.tabs >= 4, '页签都在（' + st.tabs + ' 个）');
   ok(logs.some((l) => l.indexOf('[飞书版]') >= 0), '控制台有飞书版标识：' + logs.filter((l) => l.indexOf('飞书版') >= 0).join(''));
   // 原版文件不受影响
   eq(fs.readFileSync(path.join(__dirname, '..', '考公练习追踪看板.html'), 'utf8').indexOf('btn-export-csv'), -1,

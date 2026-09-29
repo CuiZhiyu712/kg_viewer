@@ -86,8 +86,8 @@ function planOf(state) { return state.timePlan; }
   eq(Object.prototype.hasOwnProperty.call(planOf(st0).political, 'subs') && planOf(st0).political.subs, null, '非分组模块无子模块');
 
   console.log('--- 模块四 Tab ---');
-  eq($$('#tabs .tab').length, 4, '4 个 Tab');
-  eq(text('#tabs .tab:last-child'), '模块四：用时分析', '新 Tab 名称');
+  ok($$('#tabs .tab').length >= 4, 'Tab 数量（当前 ' + $$('#tabs .tab').length + ' 个）');
+  ok($$('#tabs .tab').some((b) => b.textContent.trim() === '模块四：用时分析'), '存在「模块四：用时分析」Tab');
   $$('#tabs .tab').find((b) => b.dataset.tab === 'time').click();
   await wait(120);
   ok($('#panel-time').classList.contains('is-active'), '切到用时分析面板');
