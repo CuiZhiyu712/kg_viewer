@@ -341,36 +341,7 @@
 .chart-placeholder[hidden] { display: none; }
 .chart-placeholder::before { content: '暂无数据，添加或导入套卷记录后此处会显示趋势图。'; }
 
-/* ---------------- 水印与版权 ---------------- */
-
-/* 右下角水印：刻意保持克制（小、半透明、不挡点击），
-   但去掉它就是明确的侵权行为，法律上比"没说"强得多。 */
-.brand-watermark {
-  position: fixed;
-  right: 18px;
-  bottom: 14px;
-  z-index: 900;                  /* 低于计时条(1200)与弹窗(2000) */
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 11px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-faint);
-  background: rgba(255, 255, 255, .74);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  backdrop-filter: blur(4px);
-  pointer-events: none;          /* 纯装饰，绝不挡点击 */
-  user-select: none;
-  transition: bottom .18s ease-out, opacity .18s;
-}
-.brand-watermark .wm-owner {
-  font-weight: 700;
-  letter-spacing: .5px;
-  color: #9aa3af;
-}
-.brand-watermark .wm-sep { color: var(--border-strong); }
+/* ---------------- 版权声明 ---------------- */
 
 .app-footer {
   margin-top: 28px;
@@ -521,7 +492,7 @@
 .timer-bar {
   position: fixed;
   right: 20px;
-  bottom: 52px;              /* 让开下方 14px 处的水印 */
+  bottom: 20px;
   z-index: 1200;
   display: flex;
   align-items: center;
