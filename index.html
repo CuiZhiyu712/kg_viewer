@@ -1,17 +1,18 @@
 <!--
-  考公练习追踪看板 · 飞书版（单文件）
-  由 feishu/build_feishu.py 自动生成，请勿直接修改；改动请改 src/ 或 feishu/overlay.js。
-  构建时间：2026-09-29 21:04:40
+  考公练习追踪看板（单文件版）
+  由 build.py 自动生成，请勿直接修改本文件；改动请修改 src/ 后重新构建。
+  构建时间：2026-09-29 21:16:48
   第三方库：已内联 ECharts + SheetJS
-  相对原版的增量：平表 CSV 导出（供飞书多维表格导入）+ 飞书 WebView 适配。
-  原版本身未做任何修改，两者共用同一套业务代码。
+  数据来源：仅使用「套卷复盘」XLSX 的第一个 Sheet（粉笔模考）。
+  用户数据保存在各自浏览器的 localStorage；绑定数据文件夹后另存为本地 JSON。
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>考公练习追踪看板</title>
+<!-- 这一份同时用于本地双击与飞书 H5，所以带上了 WebView 适配（安全区域等） -->
 <style>
 /* ===== css/base.css ===== */
 /* base.css —— 设计变量、重置、排版、通用控件 */
@@ -52,7 +53,14 @@
 html, body {
   margin: 0;
   padding: 0;
+  height: 100%;
 }
+
+/* WebView（飞书 H5、手机浏览器）适配：禁止下拉回弹、撑满高度。
+   桌面浏览器上这些规则无副作用（safe-area 在非刘海屏为 0）。 */
+body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+.app-header { padding-top: env(safe-area-inset-top); }
+.modal-backdrop { padding-top: calc(36px + env(safe-area-inset-top)); }
 
 body {
   background: var(--bg);
@@ -1239,6 +1247,7 @@ body.has-timer-bar .app-main { padding-bottom: 110px; }
       <button type="button" class="btn btn-primary" id="btn-add">+ 新增一套套卷记录</button>
       <button type="button" class="btn" id="btn-import">导入 XLSX</button>
       <button type="button" class="btn" id="btn-export">导出 XLSX</button>
+      <button type="button" class="btn" id="btn-export-csv" title="导出「一行 = 一套卷」的平表 CSV，可直接导入飞书多维表格或 Excel">导出 CSV</button>
       <button type="button" class="btn" id="btn-backup">数据备份</button>
       <button type="button" class="btn" id="btn-restore">数据恢复</button>
       <button type="button" class="btn btn-danger" id="btn-clear">清空记录</button>
@@ -4232,6 +4241,112 @@ var KG = window.KG || (window.KG = {});
     recordsToSheet1: recordsToSheet1,
     recordsToWorkbook: recordsToWorkbook,
     exportXlsx: exportXlsx
+  };
+})();
+
+</script>
+<script>
+/* ===== js/csv-export.js ===== */
+/* csv-export.js —— 平表 CSV 导出（一行 = 一套卷）
+ *
+ * 用途：Excel 模板是「5 行一块」的纵向结构，导入多维表格 / 数据库类工具会变成
+ * 一堆垃圾；这里拍平成一行一记录，可直接导入飞书多维表格或 Excel。
+ * 缺失值输出空字符串（不写「无」「—」，否则会被当成文本）。
+ */
+var KG = window.KG || (window.KG = {});
+
+(function () {
+  'use strict';
+
+  var U = KG.Utils;
+  var M = KG.Model;
+
+  function numOrBlank(v) {
+    var n = U.toNumber(v);
+    return n === null ? '' : n;
+  }
+
+  /** RFC4180：含逗号/引号/换行的字段要加引号，内部引号翻倍 */
+  function csvCell(v) {
+    if (v === null || v === undefined) return '';
+    var s = String(v);
+    if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  /**
+   * 列顺序：基础信息 → 每个模块（5 列）→ 该模块的子模块（4 列）→ 整套卷汇总
+   */
+  function flatColumnDefs() {
+    var defs = [];
+    function add(label, fn) { defs.push({ label: label, val: fn }); }
+
+    add('日期', function (r) { return r.date || ''; });
+    add('试卷', function (r) { return r.paperName || ''; });
+    add('分数', function (r) { return numOrBlank(r.score); });
+    add('平均分', function (r) { return numOrBlank(r.averageScore); });
+    add('击败比(%)', function (r) { return numOrBlank(r.defeatRate); });
+
+    M.MODULES.forEach(function (mod) {
+      var k = mod.key;
+      function m(r) { return (r.modules && r.modules[k]) || {}; }
+
+      add(mod.name + '题数', function (r) { return numOrBlank(m(r).questions); });
+      add(mod.name + '正确数', function (r) { return numOrBlank(m(r).correct); });
+      add(mod.name + '正确率(%)', function (r) {
+        return numOrBlank(U.calcAccuracy(m(r).questions, m(r).correct));
+      });
+      add(mod.name + '平均正确率(%)', function (r) { return numOrBlank(m(r).avgAccuracy); });
+      add(mod.name + '用时(分钟)', function (r) { return numOrBlank(m(r).time); });
+
+      var subs = M.SUBMODULES[k];
+      if (!subs) return;
+      subs.forEach(function (s) {
+        function sm(r) {
+          var mm = m(r);
+          return (mm.subModules && mm.subModules[s.key]) || {};
+        }
+        add(s.name + '题数', function (r) { return numOrBlank(sm(r).questions); });
+        add(s.name + '正确数', function (r) { return numOrBlank(sm(r).correct); });
+        add(s.name + '正确率(%)', function (r) {
+          return numOrBlank(U.calcAccuracy(sm(r).questions, sm(r).correct));
+        });
+        add(s.name + '用时(分钟)', function (r) { return numOrBlank(sm(r).time); });
+      });
+    });
+
+    add('总题数', function (r) { return numOrBlank(r.total ? r.total.questions : null); });
+    add('总正确数', function (r) { return numOrBlank(r.total ? r.total.correct : null); });
+    add('总正确率(%)', function (r) { return numOrBlank(r.total ? r.total.accuracy : null); });
+    add('总用时(分钟)', function (r) { return numOrBlank(r.total ? r.total.time : null); });
+
+    return defs;
+  }
+
+  /** records -> 平表 CSV 文本（带 UTF-8 BOM，Excel / 飞书才不会中文乱码） */
+  function recordsToFlatCsv(records) {
+    var defs = flatColumnDefs();
+    var lines = [defs.map(function (d) { return csvCell(d.label); }).join(',')];
+    var list = KG.Stats ? KG.Stats.sortedAsc(records) : records.slice();
+
+    list.forEach(function (r) {
+      lines.push(defs.map(function (d) {
+        var v = '';
+        try { v = d.val(r); } catch (e) { v = ''; }
+        return csvCell(v);
+      }).join(','));
+    });
+    return '﻿' + lines.join('\r\n') + '\r\n';
+  }
+
+  function exportFlatCsv(records, filename) {
+    var blob = new Blob([recordsToFlatCsv(records)], { type: 'text/csv;charset=utf-8' });
+    U.downloadBlob(blob, filename || ('考公套卷-平表-' + U.today() + '.csv'));
+  }
+
+  KG.CsvExport = {
+    recordsToFlatCsv: recordsToFlatCsv,
+    exportFlatCsv: exportFlatCsv
   };
 })();
 
@@ -7470,9 +7585,11 @@ var KG = window.KG || (window.KG = {});
   function updateToolbarState() {
     var hasData = state.records.length > 0;
     var btnExport = document.getElementById('btn-export');
+    var btnCsv = document.getElementById('btn-export-csv');
     var btnBackup = document.getElementById('btn-backup');
     var btnClear = document.getElementById('btn-clear');
     btnExport.disabled = !hasData || !state.libs.xlsx;
+    btnCsv.disabled = !hasData;
     btnBackup.disabled = !hasData;
     btnClear.disabled = !hasData;
 
@@ -7731,6 +7848,18 @@ var KG = window.KG || (window.KG = {});
       UI.toast('已导出 套卷复盘.xlsx（' + state.records.length + ' 套）', 'success');
     } catch (e) {
       UI.toast('导出失败：' + (e && e.message ? e.message : '未知错误'), 'error', 5000);
+    }
+  }
+
+  /* ==================== 导出平表 CSV ==================== */
+
+  function exportCsv() {
+    if (!state.records.length) { UI.toast('没有可导出的记录', 'error'); return; }
+    try {
+      KG.CsvExport.exportFlatCsv(state.records);
+      UI.toast('已导出平表 CSV（' + state.records.length + ' 条）。可直接导入飞书多维表格。', 'success', 4500);
+    } catch (e) {
+      UI.toast('导出 CSV 失败：' + (e && e.message ? e.message : '未知错误'), 'error', 5000);
     }
   }
 
@@ -8135,6 +8264,7 @@ var KG = window.KG || (window.KG = {});
     document.getElementById('btn-add').addEventListener('click', addRecord);
     document.getElementById('btn-import').addEventListener('click', pickXlsx);
     document.getElementById('btn-export').addEventListener('click', exportXlsx);
+    document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
     document.getElementById('btn-backup').addEventListener('click', backupJson);
     document.getElementById('btn-restore').addEventListener('click', pickJson);
     document.getElementById('btn-clear').addEventListener('click', clearRecords);
@@ -8414,172 +8544,6 @@ var KG = window.KG || (window.KG = {});
     switchTab: switchTab
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-})();
-
-</script>
-<script>
-/* ===== feishu/overlay.js（飞书版增量） ===== */
-/* 飞书版增量代码 —— 运行时叠加在原版之上，不修改 src/ 里的任何文件。
- *
- * 加了三样东西：
- *   1. 「导出 CSV」按钮：把记录拍平成「一行 = 一套卷」的平表，
- *      可直接导入飞书多维表格（原版的 xlsx 是 5 行一块的纵向结构，导不进去）
- *   2. 飞书 WebView 适配：安全区域、禁止下拉回弹、撑满高度
- *   3. 标题标注为「飞书版」，便于确认加载的是哪一份
- */
-(function () {
-  'use strict';
-
-  var KG = window.KG;
-  if (!KG || !KG.Model || !KG.Utils) return;
-
-  var U = KG.Utils;
-  var M = KG.Model;
-
-  /* ==================== 平表 CSV ==================== */
-
-  function numOrBlank(v) {
-    var n = U.toNumber(v);
-    return n === null ? '' : n;
-  }
-
-  /** RFC4180：含逗号/引号/换行的字段加引号，内部引号翻倍 */
-  function csvCell(v) {
-    if (v === null || v === undefined) return '';
-    var s = String(v);
-    if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
-  }
-
-  /**
-   * 列定义：基础信息 → 每个模块（5 列）→ 该模块的子模块（4 列）→ 整套卷汇总
-   * 缺失值一律空字符串，不能写「无」「—」，否则多维表格会当成文本。
-   */
-  function flatColumnDefs() {
-    var defs = [];
-    function add(label, fn) { defs.push({ label: label, val: fn }); }
-
-    add('日期', function (r) { return r.date || ''; });
-    add('试卷', function (r) { return r.paperName || ''; });
-    add('分数', function (r) { return numOrBlank(r.score); });
-    add('平均分', function (r) { return numOrBlank(r.averageScore); });
-    add('击败比(%)', function (r) { return numOrBlank(r.defeatRate); });
-
-    M.MODULES.forEach(function (mod) {
-      var k = mod.key;
-      function m(r) { return (r.modules && r.modules[k]) || {}; }
-
-      add(mod.name + '题数', function (r) { return numOrBlank(m(r).questions); });
-      add(mod.name + '正确数', function (r) { return numOrBlank(m(r).correct); });
-      add(mod.name + '正确率(%)', function (r) {
-        return numOrBlank(U.calcAccuracy(m(r).questions, m(r).correct));
-      });
-      add(mod.name + '平均正确率(%)', function (r) { return numOrBlank(m(r).avgAccuracy); });
-      add(mod.name + '用时(分钟)', function (r) { return numOrBlank(m(r).time); });
-
-      var subs = M.SUBMODULES[k];
-      if (!subs) return;
-      subs.forEach(function (s) {
-        function sm(r) {
-          var mm = m(r);
-          return (mm.subModules && mm.subModules[s.key]) || {};
-        }
-        add(s.name + '题数', function (r) { return numOrBlank(sm(r).questions); });
-        add(s.name + '正确数', function (r) { return numOrBlank(sm(r).correct); });
-        add(s.name + '正确率(%)', function (r) {
-          return numOrBlank(U.calcAccuracy(sm(r).questions, sm(r).correct));
-        });
-        add(s.name + '用时(分钟)', function (r) { return numOrBlank(sm(r).time); });
-      });
-    });
-
-    add('总题数', function (r) { return numOrBlank(r.total ? r.total.questions : null); });
-    add('总正确数', function (r) { return numOrBlank(r.total ? r.total.correct : null); });
-    add('总正确率(%)', function (r) { return numOrBlank(r.total ? r.total.accuracy : null); });
-    add('总用时(分钟)', function (r) { return numOrBlank(r.total ? r.total.time : null); });
-
-    return defs;
-  }
-
-  /** 带 UTF-8 BOM：否则 Excel / 飞书导入时中文会乱码 */
-  function buildCsv(records) {
-    var defs = flatColumnDefs();
-    var lines = [defs.map(function (d) { return csvCell(d.label); }).join(',')];
-    var list = KG.Stats ? KG.Stats.sortedAsc(records) : records.slice();
-
-    list.forEach(function (r) {
-      lines.push(defs.map(function (d) {
-        var v = '';
-        try { v = d.val(r); } catch (e) { v = ''; }
-        return csvCell(v);
-      }).join(','));
-    });
-    return '﻿' + lines.join('\r\n') + '\r\n';
-  }
-
-  function exportCsv() {
-    var state = KG.App && KG.App.state;
-    var records = (state && state.records) || [];
-    if (!records.length) {
-      KG.UI.toast('还没有记录，先新增或导入套卷后再导出。', 'warn');
-      return;
-    }
-    var csv = buildCsv(records);
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    U.downloadBlob(blob, '考公套卷-平表-' + U.today() + '.csv');
-    KG.UI.toast('已导出平表 CSV（' + records.length + ' 条）。可直接导入飞书多维表格。', 'success', 4500);
-  }
-
-  /* ==================== 飞书 WebView 适配 ==================== */
-
-  /* 立刻注入样式：app.js 在 DOMContentLoaded 里会量页头高度算 Tab 吸顶偏移，
-     样式必须在那之前生效，否则会按旧的页头高度算错。 */
-  function injectStyles() {
-    var vp = document.querySelector('meta[name="viewport"]');
-    if (vp) vp.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
-
-    var css = [
-      '/* 飞书版注入 */',
-      'html, body { height: 100%; }',
-      'body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }',
-      '.app-header { padding-top: env(safe-area-inset-top); }',
-      '.app-main { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }',
-      '.modal-backdrop { padding-top: calc(36px + env(safe-area-inset-top)); }'
-    ].join('\n');
-    var style = document.createElement('style');
-    style.setAttribute('data-role', 'feishu-overlay');
-    style.appendChild(document.createTextNode(css));
-    document.head.appendChild(style);
-  }
-
-  /* ==================== 界面 ==================== */
-
-  function injectButton() {
-    var ref = document.getElementById('btn-export');
-    if (!ref || document.getElementById('btn-export-csv')) return;
-
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn';
-    btn.id = 'btn-export-csv';
-    btn.textContent = '导出 CSV';
-    btn.title = '导出「一行 = 一套卷」的平表 CSV，可直接导入飞书多维表格或 Excel';
-    btn.addEventListener('click', exportCsv);
-    ref.insertAdjacentElement('afterend', btn);
-  }
-
-  function init() {
-    document.title = '考公练习追踪看板 · 飞书版';
-    injectButton();
-    console.log('[飞书版] 增量已加载：平表 CSV 导出 + WebView 适配');
-  }
-
-  injectStyles();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
