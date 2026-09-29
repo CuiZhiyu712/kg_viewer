@@ -239,72 +239,47 @@ function cdp(ws) {
   const sortedDates = t2.slice(1).map((r) => r[0]);
   eq(sortedDates, ['2026-09-19', '2026-10-20'], '按日期升序输出');
 
-  console.log('\n=== 水印与版权声明 ===');
+  console.log('\n=== 版权声明 ===');
   const brand = await ev(`(() => {
-    const wm = document.querySelector('.brand-watermark');
     const ft = document.querySelector('.app-footer');
-    const cs = wm ? getComputedStyle(wm) : null;
     return {
-      wmText: wm ? wm.textContent.replace(/\\s+/g, ' ').trim() : '',
-      wmFixed: cs ? cs.position : '',
-      wmPointer: cs ? cs.pointerEvents : '',
-      wmZ: cs ? parseInt(cs.zIndex, 10) : null,
+      hasFloatingWatermark: !!document.querySelector('.brand-watermark'),
       footerOwner: ft ? ft.querySelector('.app-footer-owner').textContent.trim() : '',
       footerTerms: ft ? ft.querySelector('.app-footer-terms').textContent.replace(/\\s+/g, ' ').trim() : '',
       hasBannerClaim: document.documentElement.outerHTML.indexOf('© 2026 CZY') >= 0
     };
   })()`);
   console.log('  ' + JSON.stringify(brand, null, 1));
-  ok(brand.wmText.indexOf('CZY') >= 0, '右下角水印含 CZY');
-  ok(brand.wmText.indexOf('禁止转售') >= 0, '水印写明禁止转售');
-  eq(brand.wmFixed, 'fixed', '水印固定在右下角');
-  eq(brand.wmPointer, 'none', '水印不挡点击');
-  ok(brand.wmZ < 1200, '水印层级低于计时条（z=' + brand.wmZ + '）');
+  eq(brand.hasFloatingWatermark, false, '已按需求移除右下角悬浮水印');
   ok(brand.footerOwner.indexOf('CZY') >= 0, '页脚有版权归属：' + brand.footerOwner);
+  ok(brand.footerOwner.indexOf('保留所有权利') >= 0, '页脚写明保留所有权利');
   ok(brand.footerTerms.indexOf('未经作者授权') >= 0, '页脚写明「未经作者授权」（保留授权口子）');
+  ok(brand.footerTerms.indexOf('禁止转售') >= 0, '页脚写明禁止转售');
   eq(brand.footerTerms.indexOf('免费'), -1, '声明里不提「免费」（要卖时不该白纸黑字写免费）');
-  eq(brand.wmText.indexOf('免费'), -1, '水印里也不提免费');
   eq(brand.hasBannerClaim, true, '文件头注释里也有版权声明');
 
-  console.log('\n=== 水印与计时条不重叠 ===');
+  console.log('\n=== 提示条不盖计时条 ===');
   await ev(`(() => {
     document.getElementById('btn-timer-start').click();
     return true;
   })()`);
   await sleep(1000);
-  const wmOverlap = await ev(`(() => {
-    window.scrollTo(0, document.body.scrollHeight);
-    const wm = document.querySelector('.brand-watermark').getBoundingClientRect();
-    const bar = document.getElementById('timer-bar').getBoundingClientRect();
-    return {
-      wmBottom: Math.round(wm.bottom), barTop: Math.round(bar.top),
-      overlaps: wm.bottom > bar.top && wm.top < bar.bottom && wm.right > bar.left && wm.left < bar.right,
-      bodyClass: document.body.classList.contains('has-timer-bar')
-    };
-  })()`);
-  console.log('  ' + JSON.stringify(wmOverlap));
-  eq(wmOverlap.bodyClass, true, '计时中 body 带 has-timer-bar');
-  eq(wmOverlap.overlaps, false, '计时条与水印不重叠');
-
-  // 右下角三层（水印 / 计时条 / 提示条）必须互不遮挡
   await ev(`(KG.UI.toast('重叠检测用提示条', 'info', 8000))`);
   await sleep(400);
   const stackCheck = await ev(`(() => {
     const rect = (sel) => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect() : null; };
     const hit = (a, b) => !!(a && b) && a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right;
-    const wm = rect('.brand-watermark'), bar = rect('#timer-bar'), ts = rect('.toast-root .toast');
+    const bar = rect('#timer-bar'), ts = rect('.toast-root .toast');
     return {
-      hasToast: !!ts,
-      toastVsWm: hit(ts, wm), toastVsBar: hit(ts, bar), barVsWm: hit(bar, wm),
-      toastBottom: ts ? Math.round(ts.bottom) : null,
-      wmTop: wm ? Math.round(wm.top) : null
+      hasToast: !!ts, hasBar: !!bar,
+      toastVsBar: hit(ts, bar),
+      barBottom: bar ? Math.round(bar.bottom) : null,
+      toastBottom: ts ? Math.round(ts.bottom) : null
     };
   })()`);
   console.log('  ' + JSON.stringify(stackCheck));
-  eq(stackCheck.hasToast, true, '提示条已出现（用于重叠检测）');
-  eq(stackCheck.toastVsWm, false, '提示条不盖水印');
-  eq(stackCheck.toastVsBar, false, '提示条不盖计时条');
-  eq(stackCheck.barVsWm, false, '计时条不盖水印');
+  eq(stackCheck.hasToast && stackCheck.hasBar, true, '提示条与计时条都在');
+  eq(stackCheck.toastVsBar, false, '提示条不盖计时条（否则挡到「暂停/结束」）');
   await ev(`(() => { document.getElementById('btn-bar-stop').click(); return true; })()`);
   await sleep(600);
   // 关掉确认弹窗（若有）
