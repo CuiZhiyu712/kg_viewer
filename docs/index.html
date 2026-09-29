@@ -1,12 +1,17 @@
 <!--
-  考公练习追踪看板（单文件版）
+  考公练习追踪看板（单文件版）· © 2026 CZY 保留所有权利
+  未经作者授权，禁止转售、禁止商业使用、禁止去除本声明。
   由 build.py 自动生成，请勿直接修改本文件；改动请修改 src/ 后重新构建。
-  构建时间：2026-09-29 21:30:42
+  构建时间：2026-09-29 21:51:07
   第三方库：已内联 ECharts + SheetJS
   数据来源：仅使用「套卷复盘」XLSX 的第一个 Sheet（粉笔模考）。
   用户数据保存在各自浏览器的 localStorage；绑定数据文件夹后另存为本地 JSON。
 -->
 <!DOCTYPE html>
+<!--
+  考公练习追踪看板 · © 2026 CZY 保留所有权利
+  未经作者授权，禁止转售、禁止商业使用、禁止去除本声明。
+-->
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -185,10 +190,12 @@ select.input { cursor: pointer; }
 
 /* ---------------- 提示条 ---------------- */
 
+/* 右下角从下往上排成一列，谁也不盖谁：
+   水印(底 14px) → 计时条(底 52px) → 提示条(底 104px) */
 .toast-root {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: 104px;
   z-index: 3000;
   display: flex;
   flex-direction: column;
@@ -779,6 +786,50 @@ select.input { cursor: pointer; }
 .chart-placeholder[hidden] { display: none; }
 .chart-placeholder::before { content: '暂无数据，添加或导入套卷记录后此处会显示趋势图。'; }
 
+/* ---------------- 水印与版权 ---------------- */
+
+/* 右下角水印：刻意保持克制（小、半透明、不挡点击），
+   但去掉它就是明确的侵权行为，法律上比"没说"强得多。 */
+.brand-watermark {
+  position: fixed;
+  right: 18px;
+  bottom: 14px;
+  z-index: 900;                  /* 低于计时条(1200)与弹窗(2000) */
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, .74);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+  pointer-events: none;          /* 纯装饰，绝不挡点击 */
+  user-select: none;
+  transition: bottom .18s ease-out, opacity .18s;
+}
+.brand-watermark .wm-owner {
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: #9aa3af;
+}
+.brand-watermark .wm-sep { color: var(--border-strong); }
+
+.app-footer {
+  margin-top: 28px;
+  padding: 18px 4px 4px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.app-footer-owner { color: var(--text-muted); font-weight: 500; }
+.app-footer-terms { margin-top: 2px; }
+.app-footer-terms b { color: var(--text-muted); font-weight: 600; }
+
 /* ---------------- 每日计划 ---------------- */
 
 .plan-grid {
@@ -915,7 +966,7 @@ select.input { cursor: pointer; }
 .timer-bar {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: 52px;              /* 让开下方 14px 处的水印 */
   z-index: 1200;
   display: flex;
   align-items: center;
@@ -1177,9 +1228,11 @@ body.has-timer-bar .app-main { padding-bottom: 110px; }
   .timer-bar {
     left: 12px;
     right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom));
+    bottom: calc(52px + env(safe-area-inset-bottom));   /* 让开右下角水印 */
     justify-content: space-between;
   }
+  .toast-root { right: 12px; bottom: calc(104px + env(safe-area-inset-bottom)); }
+  .brand-watermark { right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); }
   .timer-bar-label { max-width: none; flex: 1 1 auto; }
   /* 手机上计时条占满底部，留白要更大 */
   body.has-timer-bar .app-main { padding-bottom: 150px; }
@@ -1664,7 +1717,22 @@ body.has-timer-bar .app-main { padding-bottom: 110px; }
 
   </section>
 
+  <footer class="app-footer">
+    <div class="app-footer-owner">考公练习追踪看板 · © 2026 CZY 保留所有权利</div>
+    <div class="app-footer-terms">
+      <b>未经作者授权，禁止转售、禁止商业使用、禁止去除本声明。</b>
+      需授权请联系作者。
+    </div>
+  </footer>
+
 </main>
+
+<!-- 右下角水印（固定，不挡点击；计时条出现时自动上移） -->
+<div class="brand-watermark" aria-hidden="true">
+  <span class="wm-owner">CZY</span>
+  <span class="wm-sep">·</span>
+  <span class="wm-note">© 2026 未经授权禁止转售</span>
+</div>
 
 <!-- 全局悬浮计时条：切到任何 Tab 都看得见 -->
 <div class="timer-bar" id="timer-bar" hidden>
