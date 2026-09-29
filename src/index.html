@@ -2,8 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>考公练习追踪看板</title>
+<!-- 这一份同时用于本地双击与飞书 H5，所以带上了 WebView 适配（安全区域等） -->
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/layout.css">
 <link rel="stylesheet" href="css/components.css">
@@ -59,6 +60,7 @@
       <button type="button" class="btn btn-primary" id="btn-add">+ 新增一套套卷记录</button>
       <button type="button" class="btn" id="btn-import">导入 XLSX</button>
       <button type="button" class="btn" id="btn-export">导出 XLSX</button>
+      <button type="button" class="btn" id="btn-export-csv" title="导出「一行 = 一套卷」的平表 CSV，可直接导入飞书多维表格或 Excel">导出 CSV</button>
       <button type="button" class="btn" id="btn-backup">数据备份</button>
       <button type="button" class="btn" id="btn-restore">数据恢复</button>
       <button type="button" class="btn btn-danger" id="btn-clear">清空记录</button>
@@ -504,6 +506,7 @@
 <script src="js/filestore.js"></script>
 <script src="js/excel-import.js"></script>
 <script src="js/excel-export.js"></script>
+<script src="js/csv-export.js"></script>
 <script src="js/statistics.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/ui.js"></script>

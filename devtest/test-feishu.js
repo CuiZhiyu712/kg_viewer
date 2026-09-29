@@ -6,7 +6,9 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const APP = path.join(__dirname, '..', 'feishu', 'dist', '考公看板-飞书版.html');
+/* 飞书相关功能（平表 CSV 导出、WebView 适配）现在已并入 src/，
+   所以这里验证的就是唯一的那个构建产物。 */
+const APP = path.join(__dirname, '..', '考公练习追踪看板.html');
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const PORT = 9399;
 
@@ -126,35 +128,34 @@ function cdp(ws) {
     return null;
   };
 
-  console.log('=== 飞书版增量是否生效 ===');
+  console.log('=== 飞书相关功能是否都在 ===');
   const st = await ev(`(() => {
-    const style = document.querySelector('style[data-role="feishu-overlay"]');
     const vp = document.querySelector('meta[name="viewport"]');
+    // 安全区域适配已并入基础样式表（不再靠运行时注入）
+    const css = [...document.styleSheets].map((s) => {
+      try { return [...s.cssRules].map((r) => r.cssText).join('\\n'); } catch (e) { return ''; }
+    }).join('\\n');
     return {
       title: document.title,
       hasCsvBtn: !!document.getElementById('btn-export-csv'),
       csvBtnText: document.getElementById('btn-export-csv') ? document.getElementById('btn-export-csv').textContent.trim() : '',
-      injectedStyle: !!style,
-      safeArea: style ? style.textContent.indexOf('safe-area-inset-top') >= 0 : false,
+      safeAreaInCss: css.indexOf('safe-area-inset-top') >= 0,
+      overscrollInCss: css.indexOf('overscroll-behavior') >= 0,
       viewport: vp ? vp.getAttribute('content') : '',
       rows: document.querySelectorAll('#records-table tbody tr').length,
       tabs: document.querySelectorAll('#tabs .tab').length,
-      overlayLogged: false
+      csvDisabled: document.getElementById('btn-export-csv').disabled
     };
   })()`);
   console.log('  ' + JSON.stringify(st));
-  eq(st.title, '考公练习追踪看板 · 飞书版', '标题标注为飞书版');
-  eq(st.hasCsvBtn, true, '多了一个「导出 CSV」按钮');
+  eq(st.hasCsvBtn, true, '有「导出 CSV」按钮');
   eq(st.csvBtnText, '导出 CSV', '按钮文案');
-  eq(st.injectedStyle, true, '注入了飞书适配样式');
-  eq(st.safeArea, true, '含安全区域适配（刘海屏/底部横条）');
+  eq(st.safeAreaInCss, true, '样式表里有安全区域适配（刘海屏/底部横条）');
+  eq(st.overscrollInCss, true, '样式表里禁止了下拉回弹');
   eq(st.viewport.indexOf('viewport-fit=cover') >= 0, true, 'viewport 已加 viewport-fit=cover');
-  eq(st.rows, 1, '原版功能正常（记录渲染）');
+  eq(st.rows, 1, '记录正常渲染');
   ok(st.tabs >= 4, '页签都在（' + st.tabs + ' 个）');
-  ok(logs.some((l) => l.indexOf('[飞书版]') >= 0), '控制台有飞书版标识：' + logs.filter((l) => l.indexOf('飞书版') >= 0).join(''));
-  // 原版文件不受影响
-  eq(fs.readFileSync(path.join(__dirname, '..', '考公练习追踪看板.html'), 'utf8').indexOf('btn-export-csv'), -1,
-    '原版产物里没有 CSV 按钮（未被污染）');
+  eq(st.csvDisabled, false, '有记录时「导出 CSV」可用');
 
   console.log('\n=== 导出平表 CSV ===');
   await ev(`document.getElementById('btn-export-csv').click()`);
@@ -238,11 +239,21 @@ function cdp(ws) {
   const sortedDates = t2.slice(1).map((r) => r[0]);
   eq(sortedDates, ['2026-09-19', '2026-10-20'], '按日期升序输出');
 
-  console.log('\n=== 无记录时的提示 ===');
-  await ev(`localStorage.clear(); location.reload()`);
+  console.log('\n=== 无记录时按钮置灰 ===');
+  await ev(`(() => {
+    const raw = JSON.parse(localStorage.getItem('kaogong_dashboard'));
+    raw.records = [];
+    localStorage.setItem('kaogong_dashboard', JSON.stringify(raw));
+    location.reload();
+    return true;
+  })()`);
   await sleep(5000);
-  // 清空后重新加载会回到示例数据；这里只验证按钮仍可用、不报错
-  ok(await ev(`!!document.getElementById('btn-export-csv')`), '重载后增量仍生效');
+  const emptyState = await ev(`({
+    csvDisabled: document.getElementById('btn-export-csv').disabled,
+    xlsxDisabled: document.getElementById('btn-export').disabled
+  })`);
+  eq(emptyState.csvDisabled, true, '没有记录时「导出 CSV」置灰');
+  eq(emptyState.xlsxDisabled, true, '没有记录时「导出 XLSX」也置灰');
 
   console.log('\n=== 环境 ===');
   const external = requests.filter((u) => !/^(file|data|blob):/.test(u));

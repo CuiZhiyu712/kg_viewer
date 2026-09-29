@@ -241,9 +241,11 @@ var KG = window.KG || (window.KG = {});
   function updateToolbarState() {
     var hasData = state.records.length > 0;
     var btnExport = document.getElementById('btn-export');
+    var btnCsv = document.getElementById('btn-export-csv');
     var btnBackup = document.getElementById('btn-backup');
     var btnClear = document.getElementById('btn-clear');
     btnExport.disabled = !hasData || !state.libs.xlsx;
+    btnCsv.disabled = !hasData;
     btnBackup.disabled = !hasData;
     btnClear.disabled = !hasData;
 
@@ -502,6 +504,18 @@ var KG = window.KG || (window.KG = {});
       UI.toast('已导出 套卷复盘.xlsx（' + state.records.length + ' 套）', 'success');
     } catch (e) {
       UI.toast('导出失败：' + (e && e.message ? e.message : '未知错误'), 'error', 5000);
+    }
+  }
+
+  /* ==================== 导出平表 CSV ==================== */
+
+  function exportCsv() {
+    if (!state.records.length) { UI.toast('没有可导出的记录', 'error'); return; }
+    try {
+      KG.CsvExport.exportFlatCsv(state.records);
+      UI.toast('已导出平表 CSV（' + state.records.length + ' 条）。可直接导入飞书多维表格。', 'success', 4500);
+    } catch (e) {
+      UI.toast('导出 CSV 失败：' + (e && e.message ? e.message : '未知错误'), 'error', 5000);
     }
   }
 
@@ -906,6 +920,7 @@ var KG = window.KG || (window.KG = {});
     document.getElementById('btn-add').addEventListener('click', addRecord);
     document.getElementById('btn-import').addEventListener('click', pickXlsx);
     document.getElementById('btn-export').addEventListener('click', exportXlsx);
+    document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
     document.getElementById('btn-backup').addEventListener('click', backupJson);
     document.getElementById('btn-restore').addEventListener('click', pickJson);
     document.getElementById('btn-clear').addEventListener('click', clearRecords);
