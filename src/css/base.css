@@ -168,10 +168,12 @@ select.input { cursor: pointer; }
 
 /* ---------------- 提示条 ---------------- */
 
+/* 右下角从下往上排成一列，谁也不盖谁：
+   水印(底 14px) → 计时条(底 52px) → 提示条(底 104px) */
 .toast-root {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: 104px;
   z-index: 3000;
   display: flex;
   flex-direction: column;

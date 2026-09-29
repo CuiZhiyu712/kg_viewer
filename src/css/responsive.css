@@ -62,9 +62,11 @@
   .timer-bar {
     left: 12px;
     right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom));
+    bottom: calc(52px + env(safe-area-inset-bottom));   /* 让开右下角水印 */
     justify-content: space-between;
   }
+  .toast-root { right: 12px; bottom: calc(104px + env(safe-area-inset-bottom)); }
+  .brand-watermark { right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); }
   .timer-bar-label { max-width: none; flex: 1 1 auto; }
   /* 手机上计时条占满底部，留白要更大 */
   body.has-timer-bar .app-main { padding-bottom: 150px; }
