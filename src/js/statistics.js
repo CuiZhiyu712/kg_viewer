@@ -171,6 +171,35 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 用时分析 ==================== */
 
+  /**
+   * 挑出「要分析哪一次」：给了 focusId 就用它，找不到（或没给）就退回最近一次。
+   * 这样用户在用时分析里选了某套卷后，删掉它也不会让页面出错。
+   */
+  function pickFocus(sortedList, focusId) {
+    if (!sortedList.length) return null;
+    if (focusId) {
+      for (var i = 0; i < sortedList.length; i++) {
+        if (sortedList[i].id === focusId) return sortedList[i];
+      }
+    }
+    return sortedList[sortedList.length - 1];
+  }
+
+  /** 选中记录在列表中的位置信息，供界面提示「是第几套 / 是不是最近一次」 */
+  function focusInfo(sortedList, cur) {
+    var latest = sortedList.length ? sortedList[sortedList.length - 1] : null;
+    var idx = -1;
+    for (var i = 0; i < sortedList.length; i++) if (sortedList[i] === cur) idx = i;
+    return {
+      id: cur ? cur.id : '',
+      date: cur ? cur.date : '',
+      paperName: cur ? cur.paperName : '',
+      index: idx < 0 ? -1 : idx + 1,          // 第几套（按日期升序）
+      total: sortedList.length,
+      isLatest: !!cur && cur === latest
+    };
+  }
+
   /** 单个（子）模块的用时行：计划 / 最近一次 / 历史平均 / 差值 / 状态 */
   function buildTimeRow(opts) {
     var plan = U.toNumber(opts.plan);
@@ -205,11 +234,12 @@ var KG = window.KG || (window.KG = {});
 
   /**
    * 用时分析表：模块行 + 分组模块的子模块行（顺序与界面一致）
+   * focusId 指定「实际用时」看哪一次；不传则用最近一次。
    * 缺失值一律为 null，不产生 NaN。
    */
-  function timeStats(records, timePlan) {
+  function timeStats(records, timePlan, focusId) {
     var s = sortedAsc(records);
-    var cur = s.length ? s[s.length - 1] : null;
+    var cur = pickFocus(s, focusId);
     var plan = M.normalizeTimePlan(timePlan);
     var rows = [];
 
@@ -253,19 +283,19 @@ var KG = window.KG || (window.KG = {});
     return rows;
   }
 
-  /** 总用时达成率 + 超时排行 */
-  function timeOverview(records, timePlan) {
+  /** 总用时达成率 + 超时排行（同样跟随 focusId 选中的那一次） */
+  function timeOverview(records, timePlan, focusId) {
     var planTotal = M.timePlanTotal(timePlan);
-    var rows = timeStats(records, timePlan);
+    var s = sortedAsc(records);
+    var cur = pickFocus(s, focusId);
+    var rows = timeStats(records, timePlan, focusId);
     var moduleRows = rows.filter(function (r) { return r.level === 'module'; });
 
-    var s = sortedAsc(records);
-    var cur = s.length ? s[s.length - 1] : null;
-    var latestTotal = cur && cur.total ? U.toNumber(cur.total.time) : null;
+    var focusTotal = cur && cur.total ? U.toNumber(cur.total.time) : null;
     var avgTotal = mean(s.map(function (r) { return r.total ? r.total.time : null; }));
 
-    var overage = (latestTotal !== null && planTotal !== null) ? U.round(latestTotal - planTotal, 2) : null;
-    var achievement = (latestTotal !== null && planTotal) ? U.round((latestTotal / planTotal) * 100, 1) : null;
+    var overage = (focusTotal !== null && planTotal !== null) ? U.round(focusTotal - planTotal, 2) : null;
+    var achievement = (focusTotal !== null && planTotal) ? U.round((focusTotal / planTotal) * 100, 1) : null;
 
     // 超时排行：只在已设标准且有实际数据的模块之间比较，按超时分钟降序
     var ranking = moduleRows
@@ -274,20 +304,21 @@ var KG = window.KG || (window.KG = {});
 
     return {
       planTotal: planTotal,
-      latestTotal: latestTotal,
+      focusTotal: focusTotal,
+      focus: focusInfo(s, cur),
       avgTotal: avgTotal,
       overage: overage,
       achievement: achievement,
-      latestDate: cur ? cur.date : '',
-      latestPaper: cur ? cur.paperName : '',
       ranking: ranking,
-      rows: rows
+      rows: rows,
+      allRecords: s
     };
   }
 
   KG.Stats = {
     timeStats: timeStats,
     timeOverview: timeOverview,
+    pickFocus: pickFocus,
     sortedAsc: sortedAsc,
     latest: latest,
     previous: previous,

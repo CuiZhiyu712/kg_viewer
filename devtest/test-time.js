@@ -127,12 +127,15 @@ function planOf(state) { return state.timePlan; }
   eq(readRow('类比推理').diff, '+2', '类比推理 5 vs 3 -> +2');
   eq(readRow('图形推理').status, '达标', '图形推理 10/10 -> 达标');
 
-  console.log('--- 图表：含标准用时线 ---');
+  console.log('--- 图表：含标准用时线 + 所分析标记 ---');
   const chart = charts.find((c) => c.el.id === 'chart-time-analysis');
   ok(chart && chart.options.length, '用时分析图已渲染');
   const opt = chart.options[chart.options.length - 1];
+  const mlY = (o) => o.series[0].markLine.data.filter((m) => m.yAxis !== undefined).map((m) => m.yAxis);
+  const mlX = (o) => o.series[0].markLine.data.filter((m) => m.xAxis !== undefined).map((m) => m.xAxis);
   eq(opt.series[0].name, '总用时', '默认显示总用时');
-  eq(opt.series[0].markLine.data.map((m) => m.yAxis), [113], '画出标准用时合计线 113');
+  eq(mlY(opt), [113], '画出标准用时合计线 113');
+  eq(mlX(opt), ['2026-09-19'], '在图上标出正在分析的那一套（日期）');
   eq(opt.yAxis.max >= 176, true, 'y 轴上限覆盖实际值 176（标准线才不会被裁掉）');
   ok($$('#time-analysis-switch .chip').length === 7, '切换按钮：总用时 + 6 模块');
 
@@ -141,7 +144,7 @@ function planOf(state) { return state.timePlan; }
   await wait(80);
   const opt2 = chart.options[chart.options.length - 1];
   eq(opt2.series[0].name, '资料分析用时', '切到模块视图');
-  eq(opt2.series[0].markLine.data.map((m) => m.yAxis), [25], '标准线切换为该模块的 25 分钟');
+  eq(mlY(opt2), [25], '标准线切换为该模块的 25 分钟');
 
   console.log('--- 编辑标准用时（用户可自行修改） ---');
   $('#btn-edit-timeplan').click();
@@ -197,6 +200,79 @@ function planOf(state) { return state.timePlan; }
   const st3 = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
   eq(KG.Model.timePlanTotal(st3.timePlan), 113, '又回到 113');
   eq(st3.timePlan.language.subs.logicalCloze, null, '子模块重新变回 null');
+
+  console.log('--- 选择要对比的套卷（不再固定用最近一次） ---');
+  // 先加一套更晚的记录，制造「两次可选」的局面
+  $('#btn-add').click();
+  await wait(250);
+  setInput($('#modal-root [data-field="date"]'), '2026-10-10');
+  setInput($('#modal-root [data-field="paperName"]'), '第32季');
+  setInput($('#modal-root [data-field="score"]'), '80');
+  setInput($('#modal-root [data-field="averageScore"]'), '70');
+  setInput($('#modal-root [data-field="defeatRate"]'), '90');
+  let b32 = $('#modal-root .mod-block[data-module="political"]');
+  setInput($('[data-field="questions"]', b32), 20);
+  setInput($('[data-field="correct"]', b32), 15);
+  setInput($('[data-field="time"]', b32), 30);       // 政治理论 30 分钟，明显区别于第一套的 11
+  $('#modal-root [data-act="save"]').click();
+  await wait(300);
+
+  const st = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
+  const recs = KG.Stats.sortedAsc(st.records);
+  eq(recs.length, 2, '现在有两套卷');
+  const olderId = recs[0].id, newerId = recs[1].id;
+  eq(recs.map((r) => r.paperName), ['第29季', '第32季'], '按日期升序');
+
+  const sel = $('#time-focus');
+  ok(sel, '用时分析里有「对比套卷」下拉');
+  eq($$('#time-focus option').length, 3, '选项 = 最近一次 + 2 套记录');
+  eq($$('#time-focus option')[0].textContent.trim(), '最近一次（自动跟随）', '第一个选项是自动跟随');
+  ok($$('#time-focus option')[1].textContent.indexOf('第32季') >= 0, '最新的排在最前');
+  eq(sel.value, '', '默认选中「最近一次」');
+  ok(text('#time-hint').indexOf('第 2/2 套') >= 0, '提示显示当前是第几套：' + text('#time-hint'));
+  ok(text('#time-hint').indexOf('最近一次') >= 0, '提示标明是最近一次');
+
+  // 默认（最近一次）下：政治理论实际用时 = 第二套的 30
+  eq(readRow('政治理论').latest, '30', '默认用最近一次：政治理论 30 分钟');
+  eq(readRow('政治理论').status, '超时', '30 vs 标准 10 -> 超时');
+
+  // 切到第一套
+  sel.value = olderId;
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await wait(200);
+  ok(text('#time-hint').indexOf('第 1/2 套') >= 0, '切到第 1 套：' + text('#time-hint'));
+  eq(text('#time-hint').indexOf('最近一次'), -1, '切到非最近一次后不再显示「最近一次」');
+  eq(readRow('政治理论').latest, '11', '政治理论实际用时变成第一套的 11');
+  eq(readRow('政治理论').status, '超时', '11 vs 标准 10 -> 仍超时');
+  eq(readRow('资料分析').latest, '60', '资料分析实际用时来自第一套的 60');
+  const cards = $$('#time-cards .stat-card').map((c) => c.textContent.replace(/\s+/g, ' ').trim());
+  ok(cards[1].indexOf('176') >= 0, '卡片「该套总用时」变成第一套的 176：' + cards[1]);
+  ok(cards[3].indexOf('63') >= 0, '超时量随之变成 63：' + cards[3]);
+  const rank = $$('#time-ranking .rank-item').map((li) => li.textContent.replace(/\s+/g, ' ').trim());
+  ok(rank[0].indexOf('资料分析') >= 0 && rank[0].indexOf('+35') >= 0, '超时排行跟着切换：' + rank[0]);
+  eq(mlX(chart.options[chart.options.length - 1]), ['2026-09-19'], '图上的「所分析」竖线移到第一套');
+
+  // 切回自动跟随
+  sel.value = '';
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await wait(200);
+  eq(readRow('政治理论').latest, '30', '切回自动跟随后又用最近一次');
+
+  // 锁定第一套后把它删掉：应优雅回退，不报错
+  sel.value = olderId;
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await wait(200);
+  eq(readRow('政治理论').latest, '11', '已锁定第一套');
+  const rowOld = $$('#records-table tbody tr').find((tr) => tr.children[1].textContent.trim() === '第29季');
+  rowOld.querySelector('[data-act="delete"]').click();
+  await wait(250);
+  $('#modal-root [data-act="ok"]').click();
+  await wait(300);
+  eq(JSON.parse(win.localStorage.getItem('kaogong_dashboard')).records.length, 1, '第一套已删除');
+  eq($('#time-focus').value, '', '选中的记录被删后，下拉回退到「最近一次」');
+  eq($$('#time-focus option').length, 2, '选项变成 1 + 1');
+  eq(readRow('政治理论').latest, '30', '回退后仍能正常显示');
+  eq(errors.length, 0, '切换/删除过程无 JS 报错' + (errors.length ? ' -> ' + errors.join(' | ') : ''));
 
   console.log('--- 标准用时随备份 / 数据文件一起走 ---');
   $('#btn-backup').click();

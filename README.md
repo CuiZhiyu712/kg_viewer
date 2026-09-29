@@ -120,7 +120,29 @@ DEPLOY.md               ← 部署到 GitHub Pages 的步骤
 
 ```bash
 python build.py     # 生成 考公练习追踪看板.html 和 docs/index.html
+python pack.py      # 打包成给别人用的 zip（分享版/）
 ```
+
+`pack.py` 一次产出两个包：
+
+```
+考公练习追踪看板-使用者版-<日期>.zip     ← 微信直接发给使用者（2 个文件，0.7 MB）
+└─ 考公练习追踪看板/
+   ├─ 考公练习追踪看板.html   双击即用，含一条示例数据
+   └─ 使用说明.txt            纯文本，记事本可读（带 UTF-8 BOM 防乱码）
+
+考公练习追踪看板-分享版-<日期>.zip       ← 给要改代码的人（39 个文件，1.4 MB）
+└─ 考公练习追踪看板-分享版/
+   ├─ 考公练习追踪看板.html
+   ├─ 使用说明.txt
+   └─ 源码/                   src/ vendor/ build.py pack.py devtest/ README.md DEPLOY.md
+```
+
+两个包里的产物 HTML **逐字节相同**（`test-share.js` 会断言这一点，防止分叉）。
+都会排除 `node_modules`、测试截图、`data/*.json` 和 `*.xlsx`（私人数据绝不进包）。
+
+> 使用者版说明用 `.txt` 而不是 `.md`：`.md` 在 Windows 记事本里会显示成一堆 `#` 和 `|`，
+> 对不懂技术的接收者不友好。
 
 `vendor/` 下的两个库文件缺失时，build.py 会跳过内联，页面自动回退到 CDN 加载
 （逻辑在 `src/index.html` 的 `KGLoadLibs` 里，带三个备用 CDN）。内联后的内容被
@@ -181,6 +203,8 @@ node test-filestore.js           # 数据文件夹：绑定 / 自动落盘 / 内
 node test-time.js                # 模块四：标准用时 / 达成率 / 超时排行 / 对比表 / 标准线
 node test-browser.js             # headless Chrome：file:// 实跑 + 截图 + 真实下载导出校验 + 零外部请求
 node test-deploy.js              # 起本地 HTTP 服务模拟部署：安全上下文 vs 纯 http
+node test-mobile.js              # 5 档手机/平板尺寸：布局几何 + 截图
+node test-share.js               # 分享版出厂验收：解压到临时目录用真实 Chrome 打开
 node probe-fs.js                 # 一次性探测：file:// 下的文件系统能力边界
 node probe-storage.js            # 一次性探测：IndexedDB / OPFS 在 file:// 下能否用
 ```

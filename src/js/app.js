@@ -18,6 +18,7 @@ var KG = window.KG || (window.KG = {});
     records: [],
     updatedAt: '',
     activeTab: 'records',
+    timeFocusId: '',   // 用时分析里选中的套卷；空字符串 = 跟随最近一次
     filter: { keyword: '', dateFrom: '', dateTo: '', sortKey: 'date', sortDir: 'desc' },
     chartFilter: { score: 'all', module: 'all', time: 'total', statsModule: 'all', timeAnalysis: 'total' },
     libs: { xlsx: false, echarts: false }
@@ -228,7 +229,9 @@ var KG = window.KG || (window.KG = {});
     var banner = document.getElementById('lib-banner');
     var msgs = [];
     if (!Store.isAvailable()) {
-      msgs.push('浏览器本地存储不可用：数据无法持久化，刷新后会恢复为初始数据。请改用普通窗口（非隐私模式）打开。');
+      msgs.push('浏览器本地存储不可用，数据无法保存。常见原因：用了隐私/无痕窗口；浏览器禁用了站点数据；' +
+        '或者用 Safari 直接打开了本地文件（Safari 不允许本地页面保存数据）。' +
+        '请改用 Chrome / Edge 打开，或通过网址（http/https）访问。');
     }
     if (!state.libs.xlsx && state.libs.echarts) {
       msgs.push('SheetJS 加载失败（可能离线）：「导入 XLSX / 导出 XLSX」暂不可用，其余功能正常。联网后刷新页面即可恢复。');
@@ -592,6 +595,12 @@ var KG = window.KG || (window.KG = {});
       });
     });
 
+    // 用时分析：切换要对比的套卷
+    document.getElementById('time-focus').addEventListener('change', function () {
+      state.timeFocusId = this.value || '';
+      renderAll();
+    });
+
     document.getElementById('file-xlsx').addEventListener('change', onXlsxPicked);
     document.getElementById('file-json').addEventListener('change', onJsonPicked);
 
@@ -695,8 +704,8 @@ var KG = window.KG || (window.KG = {});
     var hadStored = false;
     try { hadStored = !!window.localStorage.getItem(Store.KEY); } catch (e) { hadStored = false; }
     if (!hadStored) {
-      persist();   // 首次打开：把内置的 Excel 初始数据落盘
-      UI.toast('已载入内置的初始数据（第29季 2026-09-19）。导入你自己的 XLSX 即可继续追加。', 'info', 5200);
+      persist();   // 首次打开：把内置的示例数据落盘
+      UI.toast('已载入示例数据（第29季 2026-09-19），可直接删除或改成你自己的。', 'info', 5200);
     }
 
     KG.Charts.renderPanel(activePanelId(), state.records, state);

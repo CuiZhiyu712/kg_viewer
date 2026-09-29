@@ -896,12 +896,37 @@ var KG = window.KG || (window.KG = {});
     return '<span class="pct-none">0</span>';
   }
 
-  function renderTimeAnalysis(state) {
-    var o = S.timeOverview(state.records, state.timePlan);
+  /** 对比套卷下拉：默认跟随最近一次，也可锁定某一次做分析 */
+  function renderTimeFocusSelect(state, o) {
+    var sel = document.getElementById('time-focus');
+    if (!sel) return;
 
+    var opts = ['<option value="">最近一次（自动跟随）</option>'];
+    // 倒序：最新的排在最前，方便挑最近几次
+    for (var i = o.allRecords.length - 1; i >= 0; i--) {
+      var r = o.allRecords[i];
+      var label = (r.date || '无日期') + ' · ' + (r.paperName || '未命名');
+      if (i === o.allRecords.length - 1) label += '（最近）';
+      opts.push('<option value="' + esc(r.id) + '">' + esc(label) + '</option>');
+    }
+    sel.innerHTML = opts.join('');
+
+    // 选中的记录可能已被删除：此时统计层已回退到最近一次，下拉也要跟着显示"最近一次"
+    sel.value = o.focus.isLatest ? '' : o.focus.id;
+    if (sel.selectedIndex < 0) sel.value = '';
+    sel.disabled = !state.records.length;
+  }
+
+  function renderTimeAnalysis(state) {
+    var o = S.timeOverview(state.records, state.timePlan, state.timeFocusId);
+
+    renderTimeFocusSelect(state, o);
+
+    var focus = o.focus;
     U.setHtml(document.getElementById('time-hint'),
       state.records.length
-        ? '基于最近一次 ' + (o.latestPaper || '') + '（' + (o.latestDate || '—') + '）'
+        ? '第 ' + focus.index + '/' + focus.total + ' 套 · ' + (focus.paperName || '未命名') +
+          '（' + (focus.date || '—') + '）' + (focus.isLatest ? ' · 最近一次' : '')
         : '');
 
     /* 概览卡片 */
@@ -913,8 +938,8 @@ var KG = window.KG || (window.KG = {});
         cls: ''
       },
       {
-        label: '最近一次总用时',
-        value: o.latestTotal === null ? '—' : U.fmtNum(o.latestTotal, 0),
+        label: '该套总用时',
+        value: o.focusTotal === null ? '—' : U.fmtNum(o.focusTotal, 0),
         sub: '分钟',
         cls: ''
       },
@@ -984,7 +1009,7 @@ var KG = window.KG || (window.KG = {});
     var table = document.getElementById('time-table');
     var empty = document.getElementById('time-empty');
     table.querySelector('thead').innerHTML =
-      '<tr><th>模块 / 子模块</th><th class="num">标准用时</th><th class="num">最近一次</th>' +
+      '<tr><th>模块 / 子模块</th><th class="num">标准用时</th><th class="num">实际用时</th>' +
       '<th class="num">历史平均</th><th class="num">差值</th><th class="num">最大</th><th class="num">最小</th>' +
       '<th class="center">状态</th></tr>';
 

@@ -275,6 +275,10 @@
       <div class="card-head">
         <h2 class="card-title">总用时达成率</h2>
         <div class="card-head-actions">
+          <label class="field field-inline">
+            <span class="field-label">对比套卷</span>
+            <select class="input" id="time-focus" title="选择要分析的套卷；默认跟随最近一次"></select>
+          </label>
           <span class="hint" id="time-hint"></span>
           <button type="button" class="btn btn-ghost" id="btn-edit-timeplan">编辑标准用时</button>
         </div>
@@ -301,7 +305,7 @@
           </table>
         </div>
         <div class="empty-state" id="time-empty" hidden></div>
-        <p class="footnote">「差值」= 最近一次实际用时 − 标准用时；正数为超时，负数为富余。标准用时可在右上角「编辑标准用时」里自行修改。</p>
+        <p class="footnote">「差值」= 实际用时 − 标准用时；正数为超时，负数为富余。上方的「对比套卷」可以选任意一次套卷来分析（默认跟随最近一次），选中的那一次会同步反映在达成率、超时排行、对比表和趋势图上。标准用时可在右上角「编辑标准用时」里自行修改。</p>
       </div>
     </div>
 

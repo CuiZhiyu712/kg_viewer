@@ -4,8 +4,8 @@
 
 | | |
 | --- | --- |
-| 仓库 | `git@github.com:CuiZhiyu712/WWZkaogong.git`（**公开**） |
-| 站点地址 | https://cuizhiyu712.github.io/WWZkaogong/ |
+| 仓库 | `git@github.com:CuiZhiyu712/kg_viewer.git`（**公开**） |
+| 站点地址 | https://cuizhiyu712.github.io/kg_viewer/ |
 | Pages 来源 | `main` 分支 / `docs` 文件夹 |
 | 部署产物 | `docs/index.html`（由 `python build.py` 生成，已内联 ECharts + SheetJS） |
 
@@ -14,7 +14,7 @@
 1. 推到 GitHub 后，打开仓库 **Settings → Pages**
 2. **Source** 选 `Deploy from a branch`
 3. **Branch** 选 `main`，文件夹选 **`/docs`**，点 **Save**
-4. 等 1~2 分钟，访问 https://cuizhiyu712.github.io/WWZkaogong/
+4. 等 1~2 分钟，访问 https://cuizhiyu712.github.io/kg_viewer/
 
 ## 日常更新
 
@@ -64,7 +64,7 @@ GitHub Pages 默认就是 https，所以没问题。
 你现在这份数据在 `file://` 这个 origin 下，和新站点是**两套互不相通**的存储：
 
 1. 双击本地 `考公练习追踪看板.html` → 点「数据备份」，导出 JSON
-2. 打开 `https://cuizhiyu712.github.io/WWZkaogong/` → 点「数据恢复」，选那个 JSON
+2. 打开 `https://cuizhiyu712.github.io/kg_viewer/` → 点「数据恢复」，选那个 JSON
 
 ## 上线后自检
 
@@ -76,6 +76,9 @@ GitHub Pages 默认就是 https，所以没问题。
 
 ## 可以直接转给用户的话
 
+> 在线版地址（手机用这个，微信里点开即可）：
+> **https://cuizhiyu712.github.io/kg_viewer/**
+>
 > - 数据**只存在你自己这台设备的这个浏览器里**，服务器不存任何数据，我们也看不到。
 > - 换设备 / 换浏览器 / 清理浏览数据 → 数据就看不到了。请定期用「数据备份」导出 JSON 保存。
 > - 建议第一次打开就点「绑定数据文件夹」，选中一个固定目录（比如新建一个 `考公数据` 文件夹），

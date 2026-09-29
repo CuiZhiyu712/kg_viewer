@@ -1,7 +1,7 @@
 <!--
   考公练习追踪看板（单文件版）
   由 build.py 自动生成，请勿直接修改本文件；改动请修改 src/ 后重新构建。
-  构建时间：2026-09-29 15:01:59
+  构建时间：2026-09-29 19:32:29
   第三方库：已内联 ECharts + SheetJS
   数据来源：仅使用「套卷复盘」XLSX 的第一个 Sheet（粉笔模考）。
   用户数据保存在各自浏览器的 localStorage；绑定数据文件夹后另存为本地 JSON。
@@ -1236,6 +1236,10 @@ select.input { cursor: pointer; }
       <div class="card-head">
         <h2 class="card-title">总用时达成率</h2>
         <div class="card-head-actions">
+          <label class="field field-inline">
+            <span class="field-label">对比套卷</span>
+            <select class="input" id="time-focus" title="选择要分析的套卷；默认跟随最近一次"></select>
+          </label>
           <span class="hint" id="time-hint"></span>
           <button type="button" class="btn btn-ghost" id="btn-edit-timeplan">编辑标准用时</button>
         </div>
@@ -1262,7 +1266,7 @@ select.input { cursor: pointer; }
           </table>
         </div>
         <div class="empty-state" id="time-empty" hidden></div>
-        <p class="footnote">「差值」= 最近一次实际用时 − 标准用时；正数为超时，负数为富余。标准用时可在右上角「编辑标准用时」里自行修改。</p>
+        <p class="footnote">「差值」= 实际用时 − 标准用时；正数为超时，负数为富余。上方的「对比套卷」可以选任意一次套卷来分析（默认跟随最近一次），选中的那一次会同步反映在达成率、超时排行、对比表和趋势图上。标准用时可在右上角「编辑标准用时」里自行修改。</p>
       </div>
     </div>
 
@@ -3174,6 +3178,35 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 用时分析 ==================== */
 
+  /**
+   * 挑出「要分析哪一次」：给了 focusId 就用它，找不到（或没给）就退回最近一次。
+   * 这样用户在用时分析里选了某套卷后，删掉它也不会让页面出错。
+   */
+  function pickFocus(sortedList, focusId) {
+    if (!sortedList.length) return null;
+    if (focusId) {
+      for (var i = 0; i < sortedList.length; i++) {
+        if (sortedList[i].id === focusId) return sortedList[i];
+      }
+    }
+    return sortedList[sortedList.length - 1];
+  }
+
+  /** 选中记录在列表中的位置信息，供界面提示「是第几套 / 是不是最近一次」 */
+  function focusInfo(sortedList, cur) {
+    var latest = sortedList.length ? sortedList[sortedList.length - 1] : null;
+    var idx = -1;
+    for (var i = 0; i < sortedList.length; i++) if (sortedList[i] === cur) idx = i;
+    return {
+      id: cur ? cur.id : '',
+      date: cur ? cur.date : '',
+      paperName: cur ? cur.paperName : '',
+      index: idx < 0 ? -1 : idx + 1,          // 第几套（按日期升序）
+      total: sortedList.length,
+      isLatest: !!cur && cur === latest
+    };
+  }
+
   /** 单个（子）模块的用时行：计划 / 最近一次 / 历史平均 / 差值 / 状态 */
   function buildTimeRow(opts) {
     var plan = U.toNumber(opts.plan);
@@ -3208,11 +3241,12 @@ var KG = window.KG || (window.KG = {});
 
   /**
    * 用时分析表：模块行 + 分组模块的子模块行（顺序与界面一致）
+   * focusId 指定「实际用时」看哪一次；不传则用最近一次。
    * 缺失值一律为 null，不产生 NaN。
    */
-  function timeStats(records, timePlan) {
+  function timeStats(records, timePlan, focusId) {
     var s = sortedAsc(records);
-    var cur = s.length ? s[s.length - 1] : null;
+    var cur = pickFocus(s, focusId);
     var plan = M.normalizeTimePlan(timePlan);
     var rows = [];
 
@@ -3256,19 +3290,19 @@ var KG = window.KG || (window.KG = {});
     return rows;
   }
 
-  /** 总用时达成率 + 超时排行 */
-  function timeOverview(records, timePlan) {
+  /** 总用时达成率 + 超时排行（同样跟随 focusId 选中的那一次） */
+  function timeOverview(records, timePlan, focusId) {
     var planTotal = M.timePlanTotal(timePlan);
-    var rows = timeStats(records, timePlan);
+    var s = sortedAsc(records);
+    var cur = pickFocus(s, focusId);
+    var rows = timeStats(records, timePlan, focusId);
     var moduleRows = rows.filter(function (r) { return r.level === 'module'; });
 
-    var s = sortedAsc(records);
-    var cur = s.length ? s[s.length - 1] : null;
-    var latestTotal = cur && cur.total ? U.toNumber(cur.total.time) : null;
+    var focusTotal = cur && cur.total ? U.toNumber(cur.total.time) : null;
     var avgTotal = mean(s.map(function (r) { return r.total ? r.total.time : null; }));
 
-    var overage = (latestTotal !== null && planTotal !== null) ? U.round(latestTotal - planTotal, 2) : null;
-    var achievement = (latestTotal !== null && planTotal) ? U.round((latestTotal / planTotal) * 100, 1) : null;
+    var overage = (focusTotal !== null && planTotal !== null) ? U.round(focusTotal - planTotal, 2) : null;
+    var achievement = (focusTotal !== null && planTotal) ? U.round((focusTotal / planTotal) * 100, 1) : null;
 
     // 超时排行：只在已设标准且有实际数据的模块之间比较，按超时分钟降序
     var ranking = moduleRows
@@ -3277,20 +3311,21 @@ var KG = window.KG || (window.KG = {});
 
     return {
       planTotal: planTotal,
-      latestTotal: latestTotal,
+      focusTotal: focusTotal,
+      focus: focusInfo(s, cur),
       avgTotal: avgTotal,
       overage: overage,
       achievement: achievement,
-      latestDate: cur ? cur.date : '',
-      latestPaper: cur ? cur.paperName : '',
       ranking: ranking,
-      rows: rows
+      rows: rows,
+      allRecords: s
     };
   }
 
   KG.Stats = {
     timeStats: timeStats,
     timeOverview: timeOverview,
+    pickFocus: pickFocus,
     sortedAsc: sortedAsc,
     latest: latest,
     previous: previous,
@@ -3632,9 +3667,10 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 用时分析：实际 vs 计划 ================= */
 
-  function renderTimeAnalysis(records, timePlan, mode) {
+  function renderTimeAnalysis(records, timePlan, mode, focusId) {
     var points = S.timeSeries(records);
     var plan = M.normalizeTimePlan(timePlan);
+    var focus = S.pickFocus ? S.pickFocus(S.sortedAsc(records), focusId) : null;
 
     var isTotal = mode === 'total';
     var seriesName, values, planValue, color;
@@ -3654,6 +3690,32 @@ var KG = window.KG || (window.KG = {});
 
     var axisValues = values.filter(function (v) { return typeof v === 'number'; });
     if (planValue !== null) axisValues.push(planValue);
+
+    // 两条参考线：水平的是标准用时；竖直的是当前正在分析的那一套
+    var markData = [];
+    if (planValue !== null) {
+      markData.push({
+        yAxis: planValue,
+        lineStyle: { type: 'dashed', color: '#dc2626', width: 1.6 },
+        label: {
+          position: 'insideEndTop',
+          color: '#b91c1c',
+          formatter: '计划 ' + planValue + ' 分钟'
+        }
+      });
+    }
+    if (focus && focus.date) {
+      markData.push({
+        // 分类轴上标日期：同一天有多套时只标第一套
+        xAxis: focus.date,
+        lineStyle: { type: 'solid', color: '#2563eb', width: 1.4, opacity: .55 },
+        label: {
+          position: 'insideStartTop',
+          color: '#1d4ed8',
+          formatter: '所分析'
+        }
+      });
+    }
 
     return {
       grid: baseGrid(),
@@ -3696,17 +3758,11 @@ var KG = window.KG || (window.KG = {});
         lineStyle: { width: 2.6 },
         areaStyle: { color: 'rgba(37,99,235,.08)' },
         data: values,
-        markLine: planValue === null ? undefined : {
+        markLine: markData.length ? {
           silent: true,
           symbol: 'none',
-          lineStyle: { type: 'dashed', color: '#dc2626', width: 1.6 },
-          label: {
-            position: 'insideEndTop',
-            color: '#b91c1c',
-            formatter: '计划 ' + planValue + ' 分钟'
-          },
-          data: [{ yAxis: planValue }]
-        }
+          data: markData
+        } : undefined
       }]
     };
   }
@@ -3744,7 +3800,7 @@ var KG = window.KG || (window.KG = {});
       toggle('chart-time-analysis', !isEmpty);
       if (isEmpty) return true;
       ok = apply('chart-time-analysis',
-        renderTimeAnalysis(records, state.timePlan, state.chartFilter.timeAnalysis)) && ok;
+        renderTimeAnalysis(records, state.timePlan, state.chartFilter.timeAnalysis, state.timeFocusId)) && ok;
     }
     return ok;
   }
@@ -4678,12 +4734,37 @@ var KG = window.KG || (window.KG = {});
     return '<span class="pct-none">0</span>';
   }
 
-  function renderTimeAnalysis(state) {
-    var o = S.timeOverview(state.records, state.timePlan);
+  /** 对比套卷下拉：默认跟随最近一次，也可锁定某一次做分析 */
+  function renderTimeFocusSelect(state, o) {
+    var sel = document.getElementById('time-focus');
+    if (!sel) return;
 
+    var opts = ['<option value="">最近一次（自动跟随）</option>'];
+    // 倒序：最新的排在最前，方便挑最近几次
+    for (var i = o.allRecords.length - 1; i >= 0; i--) {
+      var r = o.allRecords[i];
+      var label = (r.date || '无日期') + ' · ' + (r.paperName || '未命名');
+      if (i === o.allRecords.length - 1) label += '（最近）';
+      opts.push('<option value="' + esc(r.id) + '">' + esc(label) + '</option>');
+    }
+    sel.innerHTML = opts.join('');
+
+    // 选中的记录可能已被删除：此时统计层已回退到最近一次，下拉也要跟着显示"最近一次"
+    sel.value = o.focus.isLatest ? '' : o.focus.id;
+    if (sel.selectedIndex < 0) sel.value = '';
+    sel.disabled = !state.records.length;
+  }
+
+  function renderTimeAnalysis(state) {
+    var o = S.timeOverview(state.records, state.timePlan, state.timeFocusId);
+
+    renderTimeFocusSelect(state, o);
+
+    var focus = o.focus;
     U.setHtml(document.getElementById('time-hint'),
       state.records.length
-        ? '基于最近一次 ' + (o.latestPaper || '') + '（' + (o.latestDate || '—') + '）'
+        ? '第 ' + focus.index + '/' + focus.total + ' 套 · ' + (focus.paperName || '未命名') +
+          '（' + (focus.date || '—') + '）' + (focus.isLatest ? ' · 最近一次' : '')
         : '');
 
     /* 概览卡片 */
@@ -4695,8 +4776,8 @@ var KG = window.KG || (window.KG = {});
         cls: ''
       },
       {
-        label: '最近一次总用时',
-        value: o.latestTotal === null ? '—' : U.fmtNum(o.latestTotal, 0),
+        label: '该套总用时',
+        value: o.focusTotal === null ? '—' : U.fmtNum(o.focusTotal, 0),
         sub: '分钟',
         cls: ''
       },
@@ -4766,7 +4847,7 @@ var KG = window.KG || (window.KG = {});
     var table = document.getElementById('time-table');
     var empty = document.getElementById('time-empty');
     table.querySelector('thead').innerHTML =
-      '<tr><th>模块 / 子模块</th><th class="num">标准用时</th><th class="num">最近一次</th>' +
+      '<tr><th>模块 / 子模块</th><th class="num">标准用时</th><th class="num">实际用时</th>' +
       '<th class="num">历史平均</th><th class="num">差值</th><th class="num">最大</th><th class="num">最小</th>' +
       '<th class="center">状态</th></tr>';
 
@@ -5103,6 +5184,7 @@ var KG = window.KG || (window.KG = {});
     records: [],
     updatedAt: '',
     activeTab: 'records',
+    timeFocusId: '',   // 用时分析里选中的套卷；空字符串 = 跟随最近一次
     filter: { keyword: '', dateFrom: '', dateTo: '', sortKey: 'date', sortDir: 'desc' },
     chartFilter: { score: 'all', module: 'all', time: 'total', statsModule: 'all', timeAnalysis: 'total' },
     libs: { xlsx: false, echarts: false }
@@ -5313,7 +5395,9 @@ var KG = window.KG || (window.KG = {});
     var banner = document.getElementById('lib-banner');
     var msgs = [];
     if (!Store.isAvailable()) {
-      msgs.push('浏览器本地存储不可用：数据无法持久化，刷新后会恢复为初始数据。请改用普通窗口（非隐私模式）打开。');
+      msgs.push('浏览器本地存储不可用，数据无法保存。常见原因：用了隐私/无痕窗口；浏览器禁用了站点数据；' +
+        '或者用 Safari 直接打开了本地文件（Safari 不允许本地页面保存数据）。' +
+        '请改用 Chrome / Edge 打开，或通过网址（http/https）访问。');
     }
     if (!state.libs.xlsx && state.libs.echarts) {
       msgs.push('SheetJS 加载失败（可能离线）：「导入 XLSX / 导出 XLSX」暂不可用，其余功能正常。联网后刷新页面即可恢复。');
@@ -5677,6 +5761,12 @@ var KG = window.KG || (window.KG = {});
       });
     });
 
+    // 用时分析：切换要对比的套卷
+    document.getElementById('time-focus').addEventListener('change', function () {
+      state.timeFocusId = this.value || '';
+      renderAll();
+    });
+
     document.getElementById('file-xlsx').addEventListener('change', onXlsxPicked);
     document.getElementById('file-json').addEventListener('change', onJsonPicked);
 
@@ -5780,8 +5870,8 @@ var KG = window.KG || (window.KG = {});
     var hadStored = false;
     try { hadStored = !!window.localStorage.getItem(Store.KEY); } catch (e) { hadStored = false; }
     if (!hadStored) {
-      persist();   // 首次打开：把内置的 Excel 初始数据落盘
-      UI.toast('已载入内置的初始数据（第29季 2026-09-19）。导入你自己的 XLSX 即可继续追加。', 'info', 5200);
+      persist();   // 首次打开：把内置的示例数据落盘
+      UI.toast('已载入示例数据（第29季 2026-09-19），可直接删除或改成你自己的。', 'info', 5200);
     }
 
     KG.Charts.renderPanel(activePanelId(), state.records, state);

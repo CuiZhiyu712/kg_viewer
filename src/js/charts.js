@@ -323,9 +323,10 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 用时分析：实际 vs 计划 ================= */
 
-  function renderTimeAnalysis(records, timePlan, mode) {
+  function renderTimeAnalysis(records, timePlan, mode, focusId) {
     var points = S.timeSeries(records);
     var plan = M.normalizeTimePlan(timePlan);
+    var focus = S.pickFocus ? S.pickFocus(S.sortedAsc(records), focusId) : null;
 
     var isTotal = mode === 'total';
     var seriesName, values, planValue, color;
@@ -345,6 +346,32 @@ var KG = window.KG || (window.KG = {});
 
     var axisValues = values.filter(function (v) { return typeof v === 'number'; });
     if (planValue !== null) axisValues.push(planValue);
+
+    // 两条参考线：水平的是标准用时；竖直的是当前正在分析的那一套
+    var markData = [];
+    if (planValue !== null) {
+      markData.push({
+        yAxis: planValue,
+        lineStyle: { type: 'dashed', color: '#dc2626', width: 1.6 },
+        label: {
+          position: 'insideEndTop',
+          color: '#b91c1c',
+          formatter: '计划 ' + planValue + ' 分钟'
+        }
+      });
+    }
+    if (focus && focus.date) {
+      markData.push({
+        // 分类轴上标日期：同一天有多套时只标第一套
+        xAxis: focus.date,
+        lineStyle: { type: 'solid', color: '#2563eb', width: 1.4, opacity: .55 },
+        label: {
+          position: 'insideStartTop',
+          color: '#1d4ed8',
+          formatter: '所分析'
+        }
+      });
+    }
 
     return {
       grid: baseGrid(),
@@ -387,17 +414,11 @@ var KG = window.KG || (window.KG = {});
         lineStyle: { width: 2.6 },
         areaStyle: { color: 'rgba(37,99,235,.08)' },
         data: values,
-        markLine: planValue === null ? undefined : {
+        markLine: markData.length ? {
           silent: true,
           symbol: 'none',
-          lineStyle: { type: 'dashed', color: '#dc2626', width: 1.6 },
-          label: {
-            position: 'insideEndTop',
-            color: '#b91c1c',
-            formatter: '计划 ' + planValue + ' 分钟'
-          },
-          data: [{ yAxis: planValue }]
-        }
+          data: markData
+        } : undefined
       }]
     };
   }
@@ -435,7 +456,7 @@ var KG = window.KG || (window.KG = {});
       toggle('chart-time-analysis', !isEmpty);
       if (isEmpty) return true;
       ok = apply('chart-time-analysis',
-        renderTimeAnalysis(records, state.timePlan, state.chartFilter.timeAnalysis)) && ok;
+        renderTimeAnalysis(records, state.timePlan, state.chartFilter.timeAnalysis, state.timeFocusId)) && ok;
     }
     return ok;
   }
