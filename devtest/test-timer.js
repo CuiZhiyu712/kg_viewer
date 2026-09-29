@@ -40,6 +40,8 @@ const win = dom.window;
 const doc = win.document;
 const KG = win.KG;
 const $ = (s, r) => (r || doc).querySelector(s);
+const $$ = (s, r) => Array.from((r || doc).querySelectorAll(s));
+const text = (s) => ($(s) ? $(s).textContent.trim() : '');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const MIN = 60000;
@@ -193,6 +195,94 @@ const POMO = { focusMin: 25, breakMin: 5, longBreakMin: 15, longEvery: 4 };
   eq(distCat[0].percent, 100, '占比 100%');
   const distPlan = KG.Plans.distribution(KG.App.state, KG.Utils.today(), 'plan');
   eq(distPlan[0].name, '测试学习', '按计划时用标签名');
+
+  console.log('--- 只能选今日的计划 ---');
+  const U2 = KG.Utils, M2 = KG.Model;
+  const todayStr = U2.today();
+  const raw0 = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
+  const mkP = (kind, date, title, category) => {
+    const x = M2.blankPlan(kind, date); x.title = title; x.category = category || '';
+    return M2.normalizePlan(x);
+  };
+  raw0.plans = [
+    mkP('day', M2.addDays(todayStr, -1), '昨天的计划', '常识'),
+    mkP('day', todayStr, '今天的计划A', '资料分析'),
+    mkP('day', todayStr, '今天的计划B', '申论'),
+    mkP('day', M2.addDays(todayStr, 1), '明天的计划', '常识'),
+    mkP('week', M2.weekStartOf(todayStr), '本周的周计划', '申论'),
+    mkP('week', M2.addDays(M2.weekStartOf(todayStr), -7), '上周的周计划', '申论')
+  ];
+  win.localStorage.setItem('kaogong_dashboard', JSON.stringify(raw0));
+  const reloaded = KG.Store.load();
+  const selectable = KG.UI.timerSelectablePlans(reloaded).map((p) => p.title);
+  eq(selectable, ['今天的计划A', '今天的计划B', '本周的周计划'], '只列今天的日计划 + 本周的周计划（日计划在前）');
+
+  // 界面上也要一致
+  KG.App.state.plans = reloaded.plans;
+  KG.App.state.planRules = reloaded.planRules;
+  KG.App.state.sessions = reloaded.sessions;
+  KG.UI.renderTimer(KG.App.state);
+  const opts = $$('#timer-plan-select option').map((o) => o.textContent.trim());
+  eq(opts[0], '（不选，自由计时）', '第一项仍是自由计时');
+  eq(opts.slice(1), ['今天的计划A', '今天的计划B', '[周计划] 本周的周计划'], '下拉里没有昨天/明天/上周的计划');
+  eq(opts.length, 4, '共 3 个可选 + 1 个自由计时');
+  ok(text('#timer-mode-hint').indexOf('只列今天的') >= 0, '提示说明了约束：' + text('#timer-mode-hint'));
+
+  // 今天没有计划时的提示
+  const emptyState = { plans: [mkP('day', M2.addDays(todayStr, -1), '昨天的计划')], planRules: [], sessions: [] };
+  eq(KG.UI.timerSelectablePlans(emptyState).length, 0, '今天没计划时可选数为 0');
+
+  console.log('--- 选计划要联动标签与科目，且重绘后不丢选择 ---');
+  const sel2 = $('#timer-plan-select');
+  const planA = reloaded.plans.filter((p) => p.title === '今天的计划A')[0];
+  const planB = reloaded.plans.filter((p) => p.title === '今天的计划B')[0];
+
+  sel2.value = planA.id;
+  sel2.dispatchEvent(new win.Event('change', { bubbles: true }));
+  eq($('#timer-label').value, '今天的计划A', '选 A 后标签自动填成计划标题');
+  eq($('#timer-category').value, '资料分析', '科目也跟着填');
+
+  sel2.value = planB.id;
+  sel2.dispatchEvent(new win.Event('change', { bubbles: true }));
+  eq($('#timer-label').value, '今天的计划B', '换到 B 后标签必须跟着变（不能只在空的时候才填）');
+  eq($('#timer-category').value, '申论', '科目也跟着变');
+
+  // 重绘会重建下拉的 option，选中值必须还原
+  KG.UI.renderTimer(KG.App.state);
+  eq($('#timer-plan-select').value, planB.id, '重绘后仍选中 B（innerHTML 会重置选中值）');
+
+  // 清空选择 -> 标签也清掉，便于自由计时
+  sel2.value = '';
+  sel2.dispatchEvent(new win.Event('change', { bubbles: true }));
+  eq($('#timer-label').value, '', '选「自由计时」后标签清空');
+  eq($('#timer-category').value, '', '科目回到未指定');
+
+  console.log('--- 分布切换按钮真的生效 ---');
+  eq($('#dist-title').textContent.indexOf('按科目') >= 0, true, '默认按科目');
+  const chipPlan = $$('#timer-dist-switch .chip').find((c) => c.textContent.trim() === '按计划');
+  ok(chipPlan, '有「按计划」按钮');
+  chipPlan.click();
+  await wait(150);
+  eq(KG.App.state.timerDist, 'plan', 'state 已切到 plan');
+  eq($('#dist-title').textContent.indexOf('按计划') >= 0, true, '标题随之改变：' + $('#dist-title').textContent.trim());
+  ok($('#timer-dist-switch .chip.is-active').textContent.trim() === '按计划', '按钮高亮切过去了');
+  $$('#timer-dist-switch .chip').find((c) => c.textContent.trim() === '按科目').click();
+  await wait(150);
+  eq(KG.App.state.timerDist, 'category', '切回按科目');
+
+  console.log('--- 计划筛选按钮也真的生效 ---');
+  doc.querySelector('[data-tab="plans"]').click();
+  await wait(200);
+  const chipAll = $$('#plans-filter .chip').find((c) => c.textContent.trim() === '全部');
+  chipAll.click();
+  await wait(150);
+  eq(KG.App.state.planFilter, 'all', '点「全部」生效');
+  ok(!$('#plan-other-card').hidden, '「往后/历史」区块显示出来');
+  $$('#plans-filter .chip').find((c) => c.textContent.trim() === '今天').click();
+  await wait(150);
+  eq(KG.App.state.planFilter, 'today', '点「今天」生效');
+  doc.querySelector('[data-tab="timer"]').click();
+  await wait(200);
 
   console.log('--- 重启后能恢复运行中的计时 ---');
   const raw = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
