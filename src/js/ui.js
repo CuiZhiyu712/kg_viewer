@@ -881,6 +881,768 @@ var KG = window.KG || (window.KG = {});
     });
   }
 
+  /* ==================== 模块五：每日计划 ==================== */
+
+  function fmtDay(dateStr, todayStr) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+    if (!m) return '—';
+    var short = (+m[2]) + '月' + (+m[3]) + '日 ' + M.weekdayName(dateStr);
+    if (dateStr === todayStr) return '今天 · ' + short;
+    if (dateStr < todayStr) return short;
+    return short;
+  }
+
+  function fmtMonthDay(dateStr) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+    return m ? (+m[2]) + '月' + (+m[3]) + '日' : '—';
+  }
+
+  function planMetaHtml(plan, state, todayStr) {
+    var parts = [];
+    if (plan.kind === 'week') {
+      parts.push('<span>' + esc(fmtMonthDay(M.weekStartOf(plan.date)) + ' – ' + fmtMonthDay(M.weekEndOf(plan.date))) + '</span>');
+    } else {
+      var cls = (!plan.done && plan.date < todayStr) ? ' class="overdue"' : '';
+      parts.push('<span' + cls + '>' + esc(fmtDay(plan.date, todayStr)) + '</span>');
+    }
+    if (plan.minutes !== null) parts.push('计划 ' + U.fmtNum(plan.minutes, 0) + ' 分钟');
+    var studied = KG.Plans.studiedSecondsOf(state, plan.id);
+    if (studied > 0) {
+      parts.push('<span class="actual">实际 ' + esc(M.fmtDuration(studied)) + '</span>');
+    }
+    var badges = [];
+    if (plan.ruleId) {
+      var rule = (state.planRules || []).filter(function (r) { return r.id === plan.ruleId; })[0];
+      badges.push('<span class="plan-badge is-repeat">🔁 ' + esc(rule ? (rule.freq === 'daily' ? '每日' : '每周') : '循环') + '</span>');
+    }
+    if (plan.category) badges.push('<span class="plan-badge">' + esc(plan.category) + '</span>');
+    if (!plan.done && plan.date < todayStr) badges.push('<span class="plan-badge is-overdue">已过期</span>');
+    return '<div class="plan-meta">' + parts.join(' · ') + (badges.length ? ' ' + badges.join(' ') : '') + '</div>';
+  }
+
+  function planBodyHtml(plan) {
+    if (plan.contentMode === 'list') {
+      if (!plan.items.length) return '<div class="plan-content">（清单为空）</div>';
+      var items = plan.items.map(function (it) {
+        return '<label class="plan-item' + (it.done ? ' is-done' : '') + '">' +
+          '<input type="checkbox" data-act="item-toggle" data-item="' + esc(it.id) + '"' + (it.done ? ' checked' : '') + '>' +
+          '<span class="pi-text">' + esc(it.text || '（未命名）') + '</span>' +
+          '<span class="pi-min">' + (it.minutes === null ? '—' : U.fmtNum(it.minutes, 0) + ' 分钟') + '</span>' +
+        '</label>';
+      }).join('');
+      var done = plan.items.filter(function (it) { return it.done; }).length;
+      var pct = Math.round((done / plan.items.length) * 100);
+      return '<div class="plan-items">' + items + '</div>' +
+        '<div class="plan-progress">' +
+          '<span class="plan-progress-bar"><i style="width:' + pct + '%"></i></span>' +
+          '<span class="plan-progress-text">' + done + '/' + plan.items.length + '</span>' +
+        '</div>';
+    }
+    return plan.content
+      ? '<div class="plan-content">' + esc(plan.content) + '</div>'
+      : '';
+  }
+
+  function planActionsHtml(plan) {
+    var running = KG.App && KG.App.state.timer && KG.App.state.timer.active && KG.App.state.timer.planId === plan.id;
+    return '<div class="plan-actions">' +
+      '<button type="button" class="btn btn-xs" data-act="start" title="开始计时">' + (running ? '计时中' : '▶ 开始') + '</button>' +
+      '<button type="button" class="btn btn-xs" data-act="edit">编辑</button>' +
+      '<button type="button" class="btn btn-xs btn-danger-ghost" data-act="delete">删除</button>' +
+    '</div>';
+  }
+
+  function planCardHtml(plan, state, todayStr) {
+    var cls = ['plan-card'];
+    var overdue = !plan.done && plan.date < todayStr;
+    if (plan.done) cls.push('is-done');
+    if (overdue) cls.push('is-overdue');
+    if (plan.kind === 'week') cls.push('is-week');
+    if (state.timer && state.timer.active && state.timer.planId === plan.id) cls.push('is-running');
+
+    return '<div class="' + cls.join(' ') + '" data-id="' + esc(plan.id) + '">' +
+      '<input type="checkbox" class="plan-check" data-act="toggle"' + (plan.done ? ' checked' : '') + ' title="标记完成">' +
+      '<div class="plan-main">' +
+        '<div class="plan-head">' +
+          '<div class="plan-title">' + esc(plan.title || '（未命名计划）') + '</div>' +
+          planActionsHtml(plan) +
+        '</div>' +
+        planMetaHtml(plan, state, todayStr) +
+        planBodyHtml(plan) +
+      '</div>' +
+    '</div>';
+  }
+
+  function ruleCardHtml(rule, state, g) {
+    var comp = KG.Plans.ruleCompletion(state, rule, g.weekStart, g.weekEnd);
+    if (!comp.total) return '';          // 本周还没有实例（比如规则是下周才开始的）
+    var pct = comp.rate === null ? 0 : comp.rate;
+    var cls = ['plan-card', 'is-week'];
+    if (comp.done === comp.total) cls.push('is-done');
+
+    var body = '';
+    if (rule.contentMode === 'list' && rule.items.length) {
+      body = '<div class="plan-content">' + esc(rule.items.map(function (it) { return it.text; }).filter(Boolean).join('、')) + '</div>';
+    } else if (rule.content) {
+      body = '<div class="plan-content">' + esc(rule.content) + '</div>';
+    }
+
+    return '<div class="' + cls.join(' ') + '" data-rule-id="' + esc(rule.id) + '">' +
+      '<div class="plan-main">' +
+        '<div class="plan-head">' +
+          '<div class="plan-title">' + esc(rule.title || '（未命名计划）') + '</div>' +
+          '<div class="plan-actions">' +
+            '<button type="button" class="btn btn-xs" data-act="rule-edit">编辑</button>' +
+            '<button type="button" class="btn btn-xs btn-danger-ghost" data-act="rule-delete">停止</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="plan-meta">' +
+          '<span class="plan-badge is-repeat">🔁 ' + (rule.freq === 'daily' ? '每日' : '每周') + '重复</span> ' +
+          '本周期 ' + esc(fmtMonthDay(g.weekStart) + ' – ' + fmtMonthDay(g.weekEnd)) +
+          (comp.planMinutes === null ? '' : ' · 计划 ' + U.fmtNum(comp.planMinutes, 0) + ' 分钟') +
+        '</div>' +
+        '<div class="plan-progress">' +
+          '<span class="plan-progress-bar"><i style="width:' + pct + '%"></i></span>' +
+          '<span class="plan-progress-text">' + comp.done + '/' + comp.total + ' 完成</span>' +
+        '</div>' +
+        body +
+      '</div>' +
+    '</div>';
+  }
+
+  /**
+   * 「循环计划」管理卡：列出所有规则，让用户随时能改重复方式或停止循环。
+   * 没有这个区，每日循环就只能从某一天的编辑/删除弹窗里绕进去，很难找。
+   */
+  function ruleManageCardHtml(rule, state) {
+    var instances = (state.plans || []).filter(function (p) { return p.ruleId === rule.id; });
+    var done = instances.filter(function (p) { return p.done; }).length;
+    var start = U.toDateString(rule.startDate);
+    var until = rule.until ? U.toDateString(rule.until) : '';
+    var range = until ? (fmtMonthDay(start) + ' – ' + fmtMonthDay(until)) : (fmtMonthDay(start) + ' 起，一直重复');
+
+    return '<div class="plan-card is-week" data-rule-id="' + esc(rule.id) + '">' +
+      '<div class="plan-main">' +
+        '<div class="plan-head">' +
+          '<div class="plan-title">' + esc(rule.title || '（未命名计划）') + '</div>' +
+          '<div class="plan-actions">' +
+            '<button type="button" class="btn btn-xs" data-act="rule-edit">编辑</button>' +
+            '<button type="button" class="btn btn-xs btn-danger-ghost" data-act="rule-delete">停止</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="plan-meta">' +
+          '<span class="plan-badge is-repeat">🔁 ' + (rule.freq === 'daily' ? '每日' : '每周') + '</span>' +
+          (rule.category ? ' <span class="plan-badge">' + esc(rule.category) + '</span>' : '') +
+          ' ' + esc(rule.kind === 'week' ? '周计划' : '日计划') + ' · ' + esc(range) +
+          (rule.minutes === null ? '' : ' · 计划 ' + U.fmtNum(rule.minutes, 0) + ' 分钟') +
+        '</div>' +
+        '<div class="plan-progress">' +
+          '<span class="plan-progress-text">已生成 ' + instances.length + ' 条，完成 ' + done + ' 条</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  var PLAN_FILTERS = [
+    { key: 'today', label: '今天' },
+    { key: 'week', label: '本周' },
+    { key: 'all', label: '全部' }
+  ];
+
+  function renderPlans(state) {
+    var todayStr = U.today();
+    var g = KG.Plans.group(state, todayStr);
+
+    // 概览卡片
+    var todayComp = KG.Plans.completionOf(g.todayPlans);
+    var weekAll = (state.plans || []).filter(function (p) { return p.date >= g.weekStart && p.date <= g.weekEnd; });
+    var weekComp = KG.Plans.completionOf(weekAll);
+    var overdue = (state.plans || []).filter(function (p) { return !p.done && p.date < todayStr; });
+
+    var cards = [
+      { label: '今天要完成', value: todayComp.total ? todayComp.done + '/' + todayComp.total : '0', sub: '项' },
+      { label: '今日完成率', value: todayComp.rate === null ? '—' : U.fmtNum(todayComp.rate, 0), sub: '%' },
+      { label: '本周完成率', value: weekComp.rate === null ? '—' : U.fmtNum(weekComp.rate, 0), sub: '%' },
+      {
+        label: '过期未完成',
+        value: String(overdue.length),
+        sub: '项',
+        cls: overdue.length ? 'is-bad' : ''
+      }
+    ];
+    U.setHtml(document.getElementById('plans-cards'), cards.map(function (c) {
+      var isUnit = c.sub && c.sub.length <= 2;
+      return '<div class="stat-card">' +
+        '<div class="stat-label">' + esc(c.label) + '</div>' +
+        '<div class="stat-line"><span class="stat-value ' + (c.cls || '') + '">' + esc(c.value) + '</span>' +
+        (isUnit ? '<span class="stat-unit">' + esc(c.sub) + '</span>' : '') + '</div>' +
+      '</div>';
+    }).join(''));
+
+    U.setHtml(document.getElementById('plans-hint'),
+      (state.plans || []).length ? '共 ' + state.plans.length + ' 条计划' +
+        ((state.planRules || []).length ? ' · ' + state.planRules.length + ' 条循环规则' : '') : '');
+
+    // 筛选
+    chartSwitch('plans-filter', PLAN_FILTERS, state.planFilter, function (k) {
+      KG.App.setPlanFilter(k);
+    });
+
+    var showToday = state.planFilter !== 'week' || true;   // 今天始终显示
+    var showWeek = state.planFilter !== 'today';
+    var showOther = state.planFilter === 'all';
+
+    // 今天
+    document.getElementById('plan-today-card').hidden = !showToday;
+    var todayBox = document.getElementById('plan-today');
+    var todayEmpty = document.getElementById('plan-today-empty');
+    U.setHtml(document.getElementById('plan-today-title'), '今天 · ' + fmtDay(todayStr, todayStr));
+    if (g.todayPlans.length) {
+      todayEmpty.hidden = true;
+      todayBox.innerHTML = g.todayPlans.map(function (p) { return planCardHtml(p, state, todayStr); }).join('');
+    } else {
+      todayBox.innerHTML = '';
+      todayEmpty.hidden = false;
+      todayEmpty.innerHTML = '<p>今天还没有安排。点右上角「+ 新增计划」加一条，或在计划里勾「每日重复」让它自动出现。</p>';
+    }
+
+    // 本周
+    document.getElementById('plan-week-card').hidden = !showWeek;
+    var weekRuleHtml = g.weekRules.map(function (r) { return ruleCardHtml(r, state, g); }).join('');
+    var weekCardHtml = g.weekPlans.map(function (p) { return planCardHtml(p, state, todayStr); }).join('');
+    var weekBox = document.getElementById('plan-week');
+    var weekEmpty = document.getElementById('plan-week-empty');
+    U.setHtml(document.getElementById('plan-week-title'), '本周 · ' + fmtMonthDay(g.weekStart) + ' – ' + fmtMonthDay(g.weekEnd));
+    U.setHtml(document.getElementById('plan-week-hint'), weekComp.total ? '完成 ' + weekComp.done + '/' + weekComp.total + ' 项' : '');
+    if (weekRuleHtml || weekCardHtml) {
+      weekEmpty.hidden = true;
+      weekBox.innerHTML = weekRuleHtml + weekCardHtml;
+    } else {
+      weekBox.innerHTML = '';
+      weekEmpty.hidden = false;
+      weekEmpty.innerHTML = '<p>本周没有计划。</p>';
+    }
+
+    // 循环计划（管理入口，始终显示）
+    var rulesCard = document.getElementById('plan-rules-card');
+    var rules = state.planRules || [];
+    rulesCard.hidden = !rules.length;
+    if (rules.length) {
+      U.setHtml(document.getElementById('plan-rules-hint'), rules.length + ' 条循环规则');
+      document.getElementById('plan-rules').innerHTML = rules.map(function (r) {
+        return ruleManageCardHtml(r, state);
+      }).join('');
+    }
+
+    // 往后 / 历史
+    document.getElementById('plan-other-card').hidden = !showOther;
+    if (showOther) {
+      var otherBox = document.getElementById('plan-other');
+      var otherEmpty = document.getElementById('plan-other-empty');
+      U.setHtml(document.getElementById('plan-other-hint'), g.otherPlans.length + ' 条');
+      if (g.otherPlans.length) {
+        otherEmpty.hidden = true;
+        otherBox.innerHTML = g.otherPlans.map(function (p) { return planCardHtml(p, state, todayStr); }).join('');
+      } else {
+        otherBox.innerHTML = '';
+        otherEmpty.hidden = false;
+        otherEmpty.innerHTML = '<p>没有本周之外的计划。</p>';
+      }
+    }
+  }
+
+  /* ---------------- 计划表单 ---------------- */
+
+  function categoryOptionsHtml(selected, allowEmpty) {
+    var opts = allowEmpty ? ['<option value="">（未指定）</option>'] : [];
+    M.PLAN_CATEGORIES.forEach(function (c) {
+      opts.push('<option value="' + esc(c) + '"' + (c === selected ? ' selected' : '') + '>' + esc(c) + '</option>');
+    });
+    if (selected && M.PLAN_CATEGORIES.indexOf(selected) < 0) {
+      opts.push('<option value="' + esc(selected) + '" selected>' + esc(selected) + '</option>');
+    }
+    return opts.join('');
+  }
+
+  function planItemRowHtml(it) {
+    return '<div class="plan-item-row" data-item-row>' +
+      '<input type="text" class="input input-sm" data-field="item-text" placeholder="学什么" value="' + esc(it.text || '') + '">' +
+      '<input type="number" class="input input-sm" min="0" step="5" data-field="item-minutes" placeholder="分钟" value="' +
+        (it.minutes === null || it.minutes === undefined ? '' : it.minutes) + '">' +
+      '<button type="button" class="btn btn-xs btn-danger-ghost" data-act="item-del" title="删除这一项">×</button>' +
+    '</div>';
+  }
+
+  function planFormHtml(plan, isRule) {
+    var repeat = 'none';
+    var until = '';
+    if (isRule) {
+      repeat = plan.freq;
+      until = plan.until || '';
+    }
+    var isWeek = plan.kind === 'week';
+
+    var repeatOpts = [
+      '<option value="none"' + (repeat === 'none' ? ' selected' : '') + '>不重复</option>',
+      '<option value="daily"' + (repeat === 'daily' ? ' selected' : '') + (isWeek ? ' disabled' : '') + '>每日重复</option>',
+      '<option value="weekly"' + (repeat === 'weekly' ? ' selected' : '') + '>每周重复（与起始日期同一个星期几）</option>'
+    ].join('');
+
+    return '' +
+      '<div class="mod-block">' +
+        '<div class="mod-head">基本信息</div>' +
+        '<div class="mod-grid">' +
+          '<label class="field"><span class="field-label">类型</span>' +
+            '<select class="input" data-field="kind"' + (isRule ? ' disabled' : '') + '>' +
+              '<option value="day"' + (isWeek ? '' : ' selected') + '>日计划</option>' +
+              '<option value="week"' + (isWeek ? ' selected' : '') + '>周计划</option>' +
+            '</select></label>' +
+          '<label class="field"><span class="field-label">日期 <em class="req">*</em></span>' +
+            '<input type="date" class="input" data-field="date" value="' + esc(plan.date || U.today()) + '"></label>' +
+          '<label class="field"><span class="field-label">标题 <em class="req">*</em></span>' +
+            '<input type="text" class="input" data-field="title" placeholder="如 行测第30季套卷" value="' + esc(plan.title || '') + '"></label>' +
+          '<label class="field"><span class="field-label">科目</span>' +
+            '<select class="input" data-field="category">' + categoryOptionsHtml(plan.category || '', true) + '</select></label>' +
+        '</div>' +
+        '<div class="field-error" data-error="info"></div>' +
+      '</div>' +
+
+      '<div class="mod-block">' +
+        '<div class="mod-head">学习内容</div>' +
+        '<div class="chart-switch" id="plan-mode-switch">' +
+          '<button type="button" class="chip' + (plan.contentMode !== 'list' ? ' is-active' : '') + '" data-mode="text">文本文形式</button>' +
+          '<button type="button" class="chip' + (plan.contentMode === 'list' ? ' is-active' : '') + '" data-mode="list">清单形式（可逐条勾）</button>' +
+        '</div>' +
+        '<div data-mode-pane="text"' + (plan.contentMode === 'list' ? ' hidden' : '') + '>' +
+          '<label class="field"><span class="field-label">具体学习内容</span>' +
+            '<textarea class="input" rows="3" data-field="content" placeholder="可换行写多条，如：做题 + 逐题复盘错因">' + esc(plan.content || '') + '</textarea></label>' +
+          '<label class="field" style="max-width:220px;margin-top:10px"><span class="field-label">学习时长（分钟）</span>' +
+            '<input type="number" class="input" min="0" step="5" data-field="minutes" value="' +
+              (plan.minutes === null || plan.minutes === undefined ? '' : plan.minutes) + '"></label>' +
+        '</div>' +
+        '<div data-mode-pane="list"' + (plan.contentMode === 'list' ? '' : ' hidden') + '>' +
+          '<div class="plan-items-edit" data-items-box>' +
+            (plan.items && plan.items.length ? plan.items.map(planItemRowHtml).join('') : '') +
+          '</div>' +
+          '<div class="plan-items-foot">' +
+            '<button type="button" class="btn btn-xs" data-act="item-add">+ 添加一项</button>' +
+            '<span class="hint">合计 <b data-items-total>—</b> 分钟（自动汇总）</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="mod-block" data-block="repeat">' +
+        '<div class="mod-head">重复</div>' +
+        '<div class="mod-grid">' +
+          '<label class="field"><span class="field-label">重复方式</span>' +
+            '<select class="input" data-field="repeat">' + repeatOpts + '</select></label>' +
+          '<label class="field"><span class="field-label">截止日期（可选）</span>' +
+            '<input type="date" class="input" data-field="until" value="' + esc(until) + '"></label>' +
+        '</div>' +
+        '<p class="modal-hint">选择重复后，系统会自动把实例铺到「今天」和「本周日」中较晚的那天；' +
+        '之后每次打开页面自动补齐。已勾选过的历史实例不会被覆盖。</p>' +
+      '</div>';
+  }
+
+  /** 从表单读出计划或规则 */
+  function readPlanForm(api, base, isRule) {
+    function val(f) { var el = api.root.querySelector('[data-field="' + f + '"]'); return el ? el.value : ''; }
+    function num(f) { return U.toNumber(val(f)); }
+
+    var kind = api.root.querySelector('[data-field="kind"]').value === 'week' ? 'week' : 'day';
+    var date = U.toDateString(val('date'));
+    var repeat = val('repeat');
+    // 周计划按周一归一，循环与不循环统一，卡片上也好算
+    if (kind === 'week' && date) date = M.weekStartOf(date);
+
+    var mode = api.root.querySelector('#plan-mode-switch .chip.is-active');
+    var contentMode = mode && mode.getAttribute('data-mode') === 'list' ? 'list' : 'text';
+
+    var items = [];
+    if (contentMode === 'list') {
+      Array.prototype.slice.call(api.root.querySelectorAll('[data-items-box] [data-item-row]')).forEach(function (row) {
+        var text = row.querySelector('[data-field="item-text"]').value.trim();
+        var min = U.toNumber(row.querySelector('[data-field="item-minutes"]').value);
+        if (!text && min === null) return;      // 整行空着就忽略
+        items.push({ id: U.uuid(), text: text, minutes: min, done: false });
+      });
+    }
+
+    var now = new Date().toISOString();
+    var untilDate = U.toDateString(val('until')) || null;
+
+    if (isRule) {
+      var rule = base && base.id ? base : M.blankPlanRule({});
+      rule.freq = repeat === 'weekly' ? 'weekly' : 'daily';
+      rule.startDate = date;
+      rule.until = untilDate;
+      if (repeat === 'none') rule.until = untilDate || date;   // 不重复 = 只生成当天
+      rule.kind = kind;
+      rule.title = val('title').trim();
+      rule.category = val('category');
+      rule.contentMode = contentMode;
+      rule.content = val('content');
+      rule.items = items;
+      rule.minutes = num('minutes');
+      return { rule: rule, repeat: repeat, untilDate: untilDate, kind: kind };
+    }
+
+    var plan = base && base.id ? base : M.blankPlan(kind, date);
+    plan.kind = kind;
+    if (plan.kind === 'week') plan.date = M.weekStartOf(date) || date;
+    else plan.date = date;
+    plan.title = val('title').trim();
+    plan.category = val('category');
+    plan.contentMode = contentMode;
+    plan.content = val('content');
+    plan.items = items;
+    plan.minutes = num('minutes');
+    plan.updatedAt = now;
+    return { plan: M.normalizePlan(plan), repeat: repeat, untilDate: untilDate, kind: kind };
+  }
+
+  function refreshPlanForm(api) {
+    var paneText = api.root.querySelector('[data-mode-pane="text"]');
+    var paneList = api.root.querySelector('[data-mode-pane="list"]');
+    var active = api.root.querySelector('#plan-mode-switch .chip.is-active');
+    var isList = active && active.getAttribute('data-mode') === 'list';
+    if (paneText) paneText.hidden = isList;
+    if (paneList) paneList.hidden = !isList;
+
+    var box = api.root.querySelector('[data-items-box]');
+    var total = 0, has = false;
+    if (box) {
+      Array.prototype.slice.call(box.querySelectorAll('[data-item-row]')).forEach(function (row) {
+        var m = U.toNumber(row.querySelector('[data-field="item-minutes"]').value);
+        if (m !== null) { total += m; has = true; }
+      });
+    }
+    var el = api.root.querySelector('[data-items-total]');
+    if (el) el.textContent = has ? U.fmtNum(total, 0) : '—';
+  }
+
+  /**
+   * 打开计划表单。
+   * isRule=true 时编辑的是循环规则本身（模板）。
+   */
+  function openPlanForm(state, base, isRule, onSave) {
+    var model0 = base && base.id ? base : (isRule ? M.blankPlanRule({}) : M.blankPlan('day', U.today()));
+    var api = openModal({
+      title: isRule ? '编辑循环计划' : (base && base.id ? '编辑计划' : '新增计划'),
+      size: 'modal-md',
+      body: planFormHtml(model0, isRule),
+      footer:
+        '<button type="button" class="btn" data-act="cancel">取消</button>' +
+        '<button type="button" class="btn btn-primary" data-act="save">保存</button>',
+      onMount: function (a) {
+        // 编辑循环展开出来的某一天时，重复方式归规则管——这里只改这一次，不让他改重复
+        if (!isRule && base && base.ruleId) {
+          var block = a.root.querySelector('[data-block="repeat"]');
+          if (block) {
+            block.innerHTML = '<div class="mod-head">重复</div>' +
+              '<p class="modal-hint">这条计划来自一个循环计划。这里只修改这一次；' +
+              '要改重复方式或影响未来的实例，请在卡片上选「编辑 → 改整个循环」。</p>';
+          }
+        }
+
+        a.body.addEventListener('input', function () { refreshPlanForm(a); });
+        a.body.addEventListener('change', function () { refreshPlanForm(a); });
+
+        a.root.querySelectorAll('#plan-mode-switch .chip').forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            a.root.querySelectorAll('#plan-mode-switch .chip').forEach(function (c) { c.classList.remove('is-active'); });
+            chip.classList.add('is-active');
+            refreshPlanForm(a);
+          });
+        });
+        a.root.querySelector('[data-act="item-add"]').addEventListener('click', function () {
+          var box = a.root.querySelector('[data-items-box]');
+          var div = document.createElement('div');
+          div.innerHTML = planItemRowHtml(M.blankPlanItem());
+          box.appendChild(div.firstChild);
+          refreshPlanForm(a);
+        });
+        a.body.addEventListener('click', function (e) {
+          var del = e.target.closest && e.target.closest('[data-act="item-del"]');
+          if (del) {
+            var row = del.closest('[data-item-row]');
+            if (row) row.parentNode.removeChild(row);
+            refreshPlanForm(a);
+          }
+        });
+        a.root.querySelector('[data-field="kind"]').addEventListener('change', function () {
+          var dailyOpt = a.root.querySelector('[data-field="repeat"] option[value="daily"]');
+          var isWeek = this.value === 'week';
+          if (dailyOpt) dailyOpt.disabled = isWeek;
+          if (isWeek && a.root.querySelector('[data-field="repeat"]').value === 'daily') {
+            a.root.querySelector('[data-field="repeat"]').value = 'none';
+          }
+        });
+        refreshPlanForm(a);
+
+        a.root.querySelector('[data-act="cancel"]').addEventListener('click', a.close);
+        a.root.querySelector('[data-act="save"]').addEventListener('click', function () {
+          var out = readPlanForm(a, model0, isRule);
+          var target = isRule ? out.rule : out.plan;
+          // 注意：规则存的是 startDate，计划存的是 date，别查错字段
+          var dateValue = isRule ? target.startDate : target.date;
+          if (!dateValue) { toast('请选择日期', 'error'); return; }
+          if (!target.title) { toast('请填写标题', 'error'); return; }
+          if (target.contentMode === 'list' && !target.items.length) {
+            toast('清单形式至少要填一项内容', 'error');
+            return;
+          }
+          if (isRule && out.repeat === 'none' && !U.toDateString(a.root.querySelector('[data-field="until"]').value)) {
+            toast('选择了不重复，请填截止日期或改用「新增计划」建普通计划', 'error');
+            return;
+          }
+          onSave(out, a);
+          a.close();
+        });
+      }
+    });
+    return api;
+  }
+
+  /** 编辑/删除循环实例时的作用域询问 */
+  function openPlanScopeDialog(action, title) {
+    return new Promise(function (resolve) {
+      var isDelete = action === 'delete';
+      var api = openModal({
+        title: isDelete ? '删除循环计划' : '编辑循环计划',
+        size: 'modal-sm',
+        body: '<p>「' + esc(title || '这条计划') + '」属于一个循环计划。</p>' +
+          '<p class="modal-hint">' + (isDelete
+            ? '只删这一次：保留循环，未来的实例照常生成。删除整个循环：连同未来已生成的实例一起删掉，历史保留。'
+            : '只改这一次：只影响当天这条。改整个循环：修改规则模板，未来已生成的实例一起更新，历史保留。') + '</p>',
+        footer:
+          '<button type="button" class="btn" data-act="cancel">取消</button>' +
+          '<button type="button" class="btn" data-act="once">' + (isDelete ? '只删这一次' : '只改这一次') + '</button>' +
+          '<button type="button" class="btn btn-primary" data-act="series">' + (isDelete ? '删除整个循环' : '改整个循环') + '</button>',
+        onMount: function (a) {
+          ['once', 'series'].forEach(function (k) {
+            a.root.querySelector('[data-act="' + k + '"]').addEventListener('click', function () {
+              a.close(); resolve(k);
+            });
+          });
+        }
+      });
+      var timer = setInterval(function () {
+        if (!document.body.contains(api.root)) { clearInterval(timer); resolve(null); }
+      }, 150);
+    });
+  }
+
+  /* ==================== 模块六：学习计时 ==================== */
+
+  function timerStartAreaHtml(state) {
+    var opts = ['<option value="">（不选，自由计时）</option>'];
+    (state.plans || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (p) {
+      opts.push('<option value="' + esc(p.id) + '">' + esc(p.date + ' · ' + (p.title || '未命名')) + '</option>');
+    });
+    return opts.join('');
+  }
+
+  function renderTimer(state) {
+    var t = state.timer;
+    var active = !!(t && t.active);
+
+    document.getElementById('timer-start-area').hidden = active;
+    document.getElementById('timer-running-area').hidden = !active;
+
+    var sel = document.getElementById('timer-plan-select');
+    if (sel) sel.innerHTML = timerStartAreaHtml(state);
+    var cat = document.getElementById('timer-category');
+    if (cat && !cat.options.length) cat.innerHTML = categoryOptionsHtml(state.timerCategory || '', true);
+
+    var modeSel = document.getElementById('timer-mode');
+    if (modeSel && state.timerMode) modeSel.value = state.timerMode;
+
+    if (active) {
+      var live = document.getElementById('timer-running-area');
+      var isPomo = t.mode === 'pomodoro';
+      live.querySelector('.timer-live').classList.toggle('is-paused', KG.Timer.running(t) === false);
+      var meta = [];
+      meta.push(t.label || '自由学习');
+      if (t.category) meta.push(t.category);
+      meta.push(isPomo ? '番茄钟' : '正计时');
+      if (isPomo) meta.push('第 ' + ((t.pomodoros || 0) + 1) + ' 个番茄 · ' + (t.phase === 'focus' ? '专注中' : '休息中'));
+      U.setHtml(document.getElementById('timer-live-meta'), esc(meta.join(' · ')));
+      document.getElementById('btn-timer-pause').textContent = KG.Timer.running(t) ? '暂停' : '继续';
+    }
+
+    // 概览卡片
+    var o = KG.Plans.overview(state, U.today());
+    var cards = [
+      { label: '今日学习', value: M.fmtDuration(o.today.seconds), sub: '' },
+      { label: '本周学习', value: M.fmtDuration(o.week.seconds), sub: '' },
+      { label: '本月学习', value: M.fmtDuration(o.month.seconds), sub: '' },
+      {
+        label: '平均每天（有记录 ' + o.month.activeDays + ' 天）',
+        value: M.fmtDuration(o.month.avgPerActiveDay),
+        sub: ''
+      }
+    ];
+    U.setHtml(document.getElementById('timer-cards'), cards.map(function (c) {
+      return '<div class="stat-card">' +
+        '<div class="stat-label">' + esc(c.label) + '</div>' +
+        '<div class="stat-line"><span class="stat-value">' + esc(c.value) + '</span></div>' +
+      '</div>';
+    }).join(''));
+
+    U.setHtml(document.getElementById('timer-hint'),
+      o.month.count ? '本月 ' + o.month.count + ' 次计时' : '');
+
+    // 分布切换
+    chartSwitch('timer-dist-switch', [
+      { key: 'category', label: '按科目' },
+      { key: 'plan', label: '按计划' }
+    ], state.timerDist || 'category', function (k) { KG.App.setTimerDist(k); });
+
+    // 当天时间线
+    var list = KG.Plans.sessionsOf(state, U.today());
+    var table = document.getElementById('session-table');
+    table.querySelector('thead').innerHTML =
+      '<tr><th>时间</th><th>学的是什么</th><th>科目</th><th class="num">时长</th><th class="num">番茄</th><th class="ops">操作</th></tr>';
+    var empty = document.getElementById('session-empty');
+    if (list.length) {
+      empty.hidden = true;
+      table.querySelector('tbody').innerHTML = list.map(function (s) {
+        var t0 = s.startAt ? new Date(s.startAt) : null;
+        var t1 = s.endAt ? new Date(s.endAt) : null;
+        var hhmm = function (d) { return d ? U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes()) : '—'; };
+        return '<tr data-id="' + esc(s.id) + '">' +
+          '<td class="num">' + esc(hhmm(t0) + ' – ' + hhmm(t1)) + '</td>' +
+          '<td>' + esc(s.label || '自由学习') + '</td>' +
+          '<td>' + esc(s.category || '—') + '</td>' +
+          '<td class="num">' + esc(M.fmtDuration(s.seconds)) + '</td>' +
+          '<td class="num">' + (s.pomodoros ? s.pomodoros : '—') + '</td>' +
+          '<td class="ops"><button type="button" class="btn btn-xs btn-danger-ghost" data-act="session-del">删除</button></td>' +
+        '</tr>';
+      }).join('');
+    } else {
+      table.querySelector('tbody').innerHTML = '';
+      empty.hidden = false;
+      empty.innerHTML = '<p>今天还没有计时记录。</p>';
+    }
+    U.setHtml(document.getElementById('timeline-title'),
+      '当天时间线' + (list.length ? '（合计 ' + M.fmtDuration(KG.Plans.sumSeconds(list)) + '）' : ''));
+
+    // 分布（饼图 + 图例）
+    var byWhat = state.timerDist === 'plan' ? 'plan' : 'category';
+    var dist = KG.Plans.distribution(state, U.today(), byWhat);
+    U.setHtml(document.getElementById('dist-title'), byWhat === 'category' ? '今日时长分布（按科目）' : '今日时长分布（按计划）');
+    var box = document.getElementById('chart-dist');
+    var ph = document.getElementById('chart-dist-empty');
+    if (dist.length) {
+      box.hidden = false;
+      ph.hidden = true;
+      KG.Charts.renderDistribution('chart-dist', dist);
+    } else {
+      box.hidden = true;
+      ph.hidden = false;
+      KG.Charts.disposeChart('chart-dist');
+    }
+    var palette = ['#2563eb', '#0d9488', '#7c3aed', '#d97706', '#db2777', '#16a34a', '#0891b2', '#dc2626'];
+    U.setHtml(document.getElementById('dist-legend'), dist.map(function (d, i) {
+      return '<div class="pie-legend-item">' +
+        '<span class="pie-legend-swatch" style="background:' + palette[i % palette.length] + '"></span>' +
+        '<span class="pie-legend-name">' + esc(d.name) + '</span>' +
+        '<span class="pie-legend-val">' + esc(M.fmtDuration(d.seconds)) + ' · ' + U.fmtNum(d.percent, 0) + '%</span>' +
+      '</div>';
+    }).join(''));
+
+    renderTimerBar(state);
+  }
+
+  function renderTimerBar(state) {
+    var bar = document.getElementById('timer-bar');
+    if (!bar) return;
+    var t = state.timer;
+    if (!t || !t.active) {
+      bar.hidden = true;
+      // 计时条消失后把正文底部留白收回来
+      document.body.classList.remove('has-timer-bar');
+      return;
+    }
+    bar.hidden = false;
+    // 计时条是 fixed 的，会盖住页面右下角（比如饼图图例）；
+    // 给正文加底部留白，保证内容能滚到它上方
+    document.body.classList.add('has-timer-bar');
+    var isPomo = t.mode === 'pomodoro';
+    bar.classList.toggle('is-paused', !KG.Timer.running(t));
+    U.setHtml(document.getElementById('timer-bar-label'), esc(t.label || '自由学习'));
+    U.setHtml(document.getElementById('timer-bar-phase'),
+      isPomo ? '第 ' + ((t.pomodoros || 0) + 1) + ' 个 · ' + (t.phase === 'focus' ? '专注' : '休息') : '');
+    document.getElementById('btn-bar-pause').textContent = KG.Timer.running(t) ? '暂停' : '继续';
+  }
+
+  /** 每秒刷新计时显示（不重绘整个界面，避免闪烁） */
+  function tickTimerDisplay(state) {
+    var t = state.timer;
+    if (!t || !t.active) return;
+    var clock, label;
+    if (t.mode === 'pomodoro') {
+      clock = M.fmtClock(KG.Timer.phaseRemainSeconds(t));
+      label = t.phase === 'focus' ? '剩余专注' : '休息剩余';
+    } else {
+      clock = M.fmtClock(Math.floor(KG.Timer.studyMs(t) / 1000));
+      label = '已学习';
+    }
+    var live = document.getElementById('timer-live-clock');
+    if (live) live.textContent = clock;
+    var barClock = document.getElementById('timer-bar-clock');
+    if (barClock) barClock.textContent = clock;
+    var phase = document.getElementById('timer-bar-phase');
+    if (phase && t.mode === 'pomodoro') {
+      phase.textContent = '第 ' + ((t.pomodoros || 0) + 1) + ' 个 · ' + (t.phase === 'focus' ? '专注' : '休息');
+    }
+    var meta = document.getElementById('timer-live-meta');
+    if (meta) {
+      var parts = [t.label || '自由学习'];
+      if (t.category) parts.push(t.category);
+      parts.push(t.mode === 'pomodoro' ? '番茄钟' : '正计时');
+      parts.push(label + ' ' + clock);
+      meta.textContent = parts.join(' · ');
+    }
+  }
+
+  /* ---------------- 番茄设置 ---------------- */
+
+  function openPomoConfigForm(state, onSubmit) {
+    var p = M.normalizePomo(state.settings.pomo);
+    openModal({
+      title: '番茄钟设置',
+      size: 'modal-sm',
+      body: '<div class="mod-grid">' +
+        '<label class="field"><span class="field-label">专注时长（分钟）</span>' +
+          '<input type="number" class="input" min="1" step="1" data-field="focusMin" value="' + p.focusMin + '"></label>' +
+        '<label class="field"><span class="field-label">短休息（分钟）</span>' +
+          '<input type="number" class="input" min="1" step="1" data-field="breakMin" value="' + p.breakMin + '"></label>' +
+        '<label class="field"><span class="field-label">长休息（分钟）</span>' +
+          '<input type="number" class="input" min="1" step="1" data-field="longBreakMin" value="' + p.longBreakMin + '"></label>' +
+        '<label class="field"><span class="field-label">几个番茄后长休息</span>' +
+          '<input type="number" class="input" min="1" step="1" data-field="longEvery" value="' + p.longEvery + '"></label>' +
+      '</div>' +
+      '<p class="modal-hint">休息时间不计入学习时长，只有专注阶段算。' +
+      '到点会响一声并把浏览器标题闪动提示（如果听不到，多半是浏览器禁止了自动播放，点一下页面再试）。</p>',
+      footer:
+        '<button type="button" class="btn" data-act="cancel">取消</button>' +
+        '<button type="button" class="btn btn-primary" data-act="save">保存</button>',
+      onMount: function (a) {
+        a.root.querySelector('[data-act="cancel"]').addEventListener('click', a.close);
+        a.root.querySelector('[data-act="save"]').addEventListener('click', function () {
+          var out = {};
+          ['focusMin', 'breakMin', 'longBreakMin', 'longEvery'].forEach(function (k) {
+            out[k] = U.toNumber(a.root.querySelector('[data-field="' + k + '"]').value);
+          });
+          onSubmit(M.normalizePomo(out));
+          a.close();
+        });
+      }
+    });
+  }
+
   /* ==================== 模块四：用时分析 ==================== */
 
   var TIME_STATUS_CLASS = { over: 'badge-bad', under: 'badge-info', ontime: 'badge-ok', none: 'badge-none' };
@@ -1312,6 +2074,14 @@ var KG = window.KG || (window.KG = {});
     renderStatsTable: renderStatsTable,
     renderTimeAnalysis: renderTimeAnalysis,
     openTimePlanForm: openTimePlanForm,
+    renderPlans: renderPlans,
+    openPlanForm: openPlanForm,
+    openPlanScopeDialog: openPlanScopeDialog,
+    renderTimer: renderTimer,
+    renderTimerBar: renderTimerBar,
+    tickTimerDisplay: tickTimerDisplay,
+    openPomoConfigForm: openPomoConfigForm,
+    categoryOptionsHtml: categoryOptionsHtml,
     renderChartSwitches: renderChartSwitches,
     openRecordForm: openRecordForm,
     openDetail: openDetail,

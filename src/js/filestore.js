@@ -94,7 +94,12 @@ var KG = window.KG || (window.KG = {});
       settings: appState.settings,
       targets: appState.targets,
       timePlan: appState.timePlan,
-      records: appState.records
+      records: appState.records,
+      plans: appState.plans || [],
+      planRules: appState.planRules || [],
+      sessions: appState.sessions || []
+      /* 刻意不含 appState.timer：那是本机运行中的计时器状态，
+         写进数据文件会在多设备间产生无意义的"内容不一致"。 */
     };
     if (withStamp) p.exportedAt = new Date().toISOString();
     return p;
@@ -108,7 +113,10 @@ var KG = window.KG || (window.KG = {});
       settings: payload.settings || null,
       targets: payload.targets || null,
       timePlan: payload.timePlan || null,
-      records: payload.records || null
+      records: payload.records || null,
+      plans: payload.plans || null,
+      planRules: payload.planRules || null,
+      sessions: payload.sessions || null
     });
   }
 

@@ -215,7 +215,7 @@ async function browserCheck(htmlPath) {
   const r = await browserCheck(h2);
   eq(r.st.rowCount, 1, '示例数据正常渲染');
   eq(r.st.statCards, 4, '概览卡片正常');
-  eq(r.st.tabs, 4, '四个页签都在');
+  ok(r.st.tabs >= 4, '页签都在（' + r.st.tabs + ' 个）');
   eq(r.st.xlsx && r.st.echarts, true, '内联的库已就绪');
   eq(r.st.bannerVisible, false, '无告警条');
   eq(r.external, [], '零外部请求（可离线运行）');
