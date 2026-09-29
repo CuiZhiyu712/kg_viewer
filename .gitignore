@@ -1,10 +1,6 @@
 # 本地双击用的单文件产物（部署用的是 docs/index.html，那个要提交）
 /考公练习追踪看板.html
 
-# 飞书版的构建产物：由 feishu/build_feishu.py 生成，不进 main；
-# 部署用的副本放在 feishu 分支的根目录 index.html
-/feishu/dist/
-
 # 分享版打包产物
 /分享版/
 

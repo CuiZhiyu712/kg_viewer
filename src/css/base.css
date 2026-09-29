@@ -36,7 +36,14 @@
 html, body {
   margin: 0;
   padding: 0;
+  height: 100%;
 }
+
+/* WebView（飞书 H5、手机浏览器）适配：禁止下拉回弹、撑满高度。
+   桌面浏览器上这些规则无副作用（safe-area 在非刘海屏为 0）。 */
+body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+.app-header { padding-top: env(safe-area-inset-top); }
+.modal-backdrop { padding-top: calc(36px + env(safe-area-inset-top)); }
 
 body {
   background: var(--bg);

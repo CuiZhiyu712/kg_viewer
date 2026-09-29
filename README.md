@@ -106,10 +106,12 @@ build.py                ← 把 src/ + vendor/ 内联成单文件
 src/                    ← 源码（改这里）
   index.html
   css/  base.css layout.css components.css responsive.css
-  js/   utils.js model.js seed.js storage.js filestore.js excel-import.js
-        excel-export.js statistics.js charts.js ui.js app.js
+  js/   utils.js model.js seed.js plans.js timer.js storage.js filestore.js
+        excel-import.js excel-export.js csv-export.js statistics.js
+        charts.js ui.js app.js
 vendor/                 ← ECharts / SheetJS 原始文件，供 build.py 内联
 docs/index.html         ← 部署产物（GitHub Pages 来源选 main /docs）
+feishu/                 ← 飞书部署说明（功能本身已并入 src/）
 data/                   ← 绑定数据文件夹后，kaogong_data.json 落在这里
 devtest/                ← 验证脚本（Node + jsdom + headless Chrome）
 DEPLOY.md               ← 部署到 GitHub Pages 的步骤
@@ -123,6 +125,10 @@ python build.py     # 生成 考公练习追踪看板.html 和 docs/index.html
 python pack.py      # 打包成给别人用的 zip（分享版/）
 ```
 
+**只有一个版本**：本地双击、飞书 H5、GitHub Pages 用的都是同一个产物。
+（原先是「保守原版 + overlay 叠加出飞书版」两变体；因为飞书版本就是原版超集，
+已合并成一条构建路径，避免改了一边忘了另一边。）
+
 `pack.py` 一次产出两个包：
 
 ```
@@ -131,11 +137,11 @@ python pack.py      # 打包成给别人用的 zip（分享版/）
    ├─ 考公练习追踪看板.html   双击即用，含一条示例数据
    └─ 使用说明.txt            纯文本，记事本可读（带 UTF-8 BOM 防乱码）
 
-考公练习追踪看板-分享版-<日期>.zip       ← 给要改代码的人（39 个文件，1.4 MB）
+考公练习追踪看板-分享版-<日期>.zip       ← 给要改代码的人（1.5 MB）
 └─ 考公练习追踪看板-分享版/
    ├─ 考公练习追踪看板.html
    ├─ 使用说明.txt
-   └─ 源码/                   src/ vendor/ build.py pack.py devtest/ README.md DEPLOY.md
+   └─ 源码/                   src/ vendor/ build.py pack.py devtest/ feishu/ README.md DEPLOY.md
 ```
 
 两个包里的产物 HTML **逐字节相同**（`test-share.js` 会断言这一点，防止分叉）。
