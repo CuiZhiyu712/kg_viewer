@@ -1435,10 +1435,31 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 模块六：学习计时 ==================== */
 
+  /**
+   * 计时可以挂到哪些计划上：**只限今天**。
+   *   - 日计划：日期就是今天
+   *   - 周计划：它的日期存的是周一，所以按「落在本周范围内」算（它确实是今天生效的计划）
+   * 避免把计时挂到昨天/明天的计划上，让那张卡片的「实际用时」跨天串味。
+   */
+  function timerSelectablePlans(state) {
+    var todayStr = U.today();
+    var weekStart = M.weekStartOf(todayStr);
+    var weekEnd = M.weekEndOf(todayStr);
+    return (state.plans || []).filter(function (p) {
+      if (p.date === todayStr) return true;
+      if (p.kind === 'week' && p.date >= weekStart && p.date <= weekEnd) return true;
+      return false;
+    }).sort(function (a, b) {
+      if (a.kind !== b.kind) return a.kind === 'week' ? 1 : -1;   // 日计划排前面（更常计时）
+      return (a.createdAt || '') < (b.createdAt || '') ? -1 : 1;
+    });
+  }
+
   function timerStartAreaHtml(state) {
     var opts = ['<option value="">（不选，自由计时）</option>'];
-    (state.plans || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (p) {
-      opts.push('<option value="' + esc(p.id) + '">' + esc(p.date + ' · ' + (p.title || '未命名')) + '</option>');
+    timerSelectablePlans(state).forEach(function (p) {
+      var label = (p.kind === 'week' ? '[周计划] ' : '') + (p.title || '未命名');
+      opts.push('<option value="' + esc(p.id) + '">' + esc(label) + '</option>');
     });
     return opts.join('');
   }
@@ -1450,8 +1471,24 @@ var KG = window.KG || (window.KG = {});
     document.getElementById('timer-start-area').hidden = active;
     document.getElementById('timer-running-area').hidden = !active;
 
+    var selectable = timerSelectablePlans(state);
+    U.setHtml(document.getElementById('timer-mode-hint'),
+      selectable.length
+        ? '可选计划：只列今天的（' + selectable.length + ' 个）'
+        : '今天没有计划，可自由计时（或先去模块五添加）');
+
     var sel = document.getElementById('timer-plan-select');
-    if (sel) sel.innerHTML = timerStartAreaHtml(state);
+    if (sel) {
+      sel.innerHTML = timerStartAreaHtml(state);
+      // innerHTML 会把选中值重置成第一项，所以每次重绘都要把选择还原回去
+      var want = state.timerPlanId || '';
+      sel.value = want;
+      if (sel.value !== want) {
+        // 原选择已不在可选范围（例如跨天了），退回「自由计时」
+        sel.value = '';
+        state.timerPlanId = '';
+      }
+    }
     var cat = document.getElementById('timer-category');
     if (cat && !cat.options.length) cat.innerHTML = categoryOptionsHtml(state.timerCategory || '', true);
 
@@ -2078,6 +2115,7 @@ var KG = window.KG || (window.KG = {});
     openPlanForm: openPlanForm,
     openPlanScopeDialog: openPlanScopeDialog,
     renderTimer: renderTimer,
+    timerSelectablePlans: timerSelectablePlans,
     renderTimerBar: renderTimerBar,
     tickTimerDisplay: tickTimerDisplay,
     openPomoConfigForm: openPomoConfigForm,

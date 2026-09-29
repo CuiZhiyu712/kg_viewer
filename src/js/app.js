@@ -27,6 +27,7 @@ var KG = window.KG || (window.KG = {});
     planOtherOpen: false,
     timerDist: 'category',   // category | plan
     timerMode: 'stopwatch',
+    timerPlanId: '',         // 计时区选中的计划（会跨重绘保留）
     timerCategory: '',
     filter: { keyword: '', dateFrom: '', dateTo: '', sortKey: 'date', sortDir: 'desc' },
     chartFilter: { score: 'all', module: 'all', time: 'total', statsModule: 'all', timeAnalysis: 'total' },
@@ -636,6 +637,12 @@ var KG = window.KG || (window.KG = {});
     UI.renderPlans(state);
   }
 
+  /** 时长分布饼图：按科目 / 按计划 */
+  function setTimerDist(key) {
+    state.timerDist = key === 'plan' ? 'plan' : 'category';
+    UI.renderTimer(state);
+  }
+
   function addPlan() {
     UI.openPlanForm(state, null, false, function (out) {
       var out2 = out.plan;
@@ -819,9 +826,10 @@ var KG = window.KG || (window.KG = {});
   }
 
   function startTimerFromForm() {
+    // 以 state 为准（DOM 的下拉值会被重绘重置，state 才是可靠来源）
     var sel = document.getElementById('timer-plan-select');
-    var planId = sel ? sel.value : '';
-    var plan = planId ? findPlan(planId) : null;
+    state.timerPlanId = (sel && sel.value) || state.timerPlanId || '';
+    var plan = state.timerPlanId ? findPlan(state.timerPlanId) : null;
     var labelEl = document.getElementById('timer-label');
     var catEl = document.getElementById('timer-category');
     var modeEl = document.getElementById('timer-mode');
@@ -1018,13 +1026,14 @@ var KG = window.KG || (window.KG = {});
     document.getElementById('btn-bar-stop').addEventListener('click', stopTimer);
 
     document.getElementById('timer-plan-select').addEventListener('change', function () {
-      var plan = this.value ? findPlan(this.value) : null;
+      state.timerPlanId = this.value || '';
+      var plan = state.timerPlanId ? findPlan(state.timerPlanId) : null;
       var labelEl = document.getElementById('timer-label');
       var catEl = document.getElementById('timer-category');
-      if (plan) {
-        if (labelEl && !labelEl.value.trim()) labelEl.value = plan.title || '';
-        if (catEl && plan.category) catEl.value = plan.category;
-      }
+
+      // 换了计划就把标签/科目一起换掉（不再「只在空的时候才填」——那样看着像没反应）
+      if (labelEl) labelEl.value = plan ? (plan.title || '') : '';
+      if (catEl) catEl.value = plan ? (plan.category || '') : '';
     });
     document.getElementById('timer-mode').addEventListener('change', function () {
       state.timerMode = this.value;
@@ -1197,6 +1206,8 @@ var KG = window.KG || (window.KG = {});
     importRecords: importRecords,
     editRecord: editRecord,
     setChartFilter: setChartFilter,
+    setPlanFilter: setPlanFilter,
+    setTimerDist: setTimerDist,
     switchTab: switchTab
   };
 

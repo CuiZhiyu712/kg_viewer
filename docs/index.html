@@ -1,7 +1,7 @@
 <!--
   考公练习追踪看板（单文件版）
   由 build.py 自动生成，请勿直接修改本文件；改动请修改 src/ 后重新构建。
-  构建时间：2026-09-29 21:16:48
+  构建时间：2026-09-29 21:30:42
   第三方库：已内联 ECharts + SheetJS
   数据来源：仅使用「套卷复盘」XLSX 的第一个 Sheet（粉笔模考）。
   用户数据保存在各自浏览器的 localStorage；绑定数据文件夹后另存为本地 JSON。
@@ -6681,10 +6681,31 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 模块六：学习计时 ==================== */
 
+  /**
+   * 计时可以挂到哪些计划上：**只限今天**。
+   *   - 日计划：日期就是今天
+   *   - 周计划：它的日期存的是周一，所以按「落在本周范围内」算（它确实是今天生效的计划）
+   * 避免把计时挂到昨天/明天的计划上，让那张卡片的「实际用时」跨天串味。
+   */
+  function timerSelectablePlans(state) {
+    var todayStr = U.today();
+    var weekStart = M.weekStartOf(todayStr);
+    var weekEnd = M.weekEndOf(todayStr);
+    return (state.plans || []).filter(function (p) {
+      if (p.date === todayStr) return true;
+      if (p.kind === 'week' && p.date >= weekStart && p.date <= weekEnd) return true;
+      return false;
+    }).sort(function (a, b) {
+      if (a.kind !== b.kind) return a.kind === 'week' ? 1 : -1;   // 日计划排前面（更常计时）
+      return (a.createdAt || '') < (b.createdAt || '') ? -1 : 1;
+    });
+  }
+
   function timerStartAreaHtml(state) {
     var opts = ['<option value="">（不选，自由计时）</option>'];
-    (state.plans || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (p) {
-      opts.push('<option value="' + esc(p.id) + '">' + esc(p.date + ' · ' + (p.title || '未命名')) + '</option>');
+    timerSelectablePlans(state).forEach(function (p) {
+      var label = (p.kind === 'week' ? '[周计划] ' : '') + (p.title || '未命名');
+      opts.push('<option value="' + esc(p.id) + '">' + esc(label) + '</option>');
     });
     return opts.join('');
   }
@@ -6696,8 +6717,24 @@ var KG = window.KG || (window.KG = {});
     document.getElementById('timer-start-area').hidden = active;
     document.getElementById('timer-running-area').hidden = !active;
 
+    var selectable = timerSelectablePlans(state);
+    U.setHtml(document.getElementById('timer-mode-hint'),
+      selectable.length
+        ? '可选计划：只列今天的（' + selectable.length + ' 个）'
+        : '今天没有计划，可自由计时（或先去模块五添加）');
+
     var sel = document.getElementById('timer-plan-select');
-    if (sel) sel.innerHTML = timerStartAreaHtml(state);
+    if (sel) {
+      sel.innerHTML = timerStartAreaHtml(state);
+      // innerHTML 会把选中值重置成第一项，所以每次重绘都要把选择还原回去
+      var want = state.timerPlanId || '';
+      sel.value = want;
+      if (sel.value !== want) {
+        // 原选择已不在可选范围（例如跨天了），退回「自由计时」
+        sel.value = '';
+        state.timerPlanId = '';
+      }
+    }
     var cat = document.getElementById('timer-category');
     if (cat && !cat.options.length) cat.innerHTML = categoryOptionsHtml(state.timerCategory || '', true);
 
@@ -7324,6 +7361,7 @@ var KG = window.KG || (window.KG = {});
     openPlanForm: openPlanForm,
     openPlanScopeDialog: openPlanScopeDialog,
     renderTimer: renderTimer,
+    timerSelectablePlans: timerSelectablePlans,
     renderTimerBar: renderTimerBar,
     tickTimerDisplay: tickTimerDisplay,
     openPomoConfigForm: openPomoConfigForm,
@@ -7371,6 +7409,7 @@ var KG = window.KG || (window.KG = {});
     planOtherOpen: false,
     timerDist: 'category',   // category | plan
     timerMode: 'stopwatch',
+    timerPlanId: '',         // 计时区选中的计划（会跨重绘保留）
     timerCategory: '',
     filter: { keyword: '', dateFrom: '', dateTo: '', sortKey: 'date', sortDir: 'desc' },
     chartFilter: { score: 'all', module: 'all', time: 'total', statsModule: 'all', timeAnalysis: 'total' },
@@ -7980,6 +8019,12 @@ var KG = window.KG || (window.KG = {});
     UI.renderPlans(state);
   }
 
+  /** 时长分布饼图：按科目 / 按计划 */
+  function setTimerDist(key) {
+    state.timerDist = key === 'plan' ? 'plan' : 'category';
+    UI.renderTimer(state);
+  }
+
   function addPlan() {
     UI.openPlanForm(state, null, false, function (out) {
       var out2 = out.plan;
@@ -8163,9 +8208,10 @@ var KG = window.KG || (window.KG = {});
   }
 
   function startTimerFromForm() {
+    // 以 state 为准（DOM 的下拉值会被重绘重置，state 才是可靠来源）
     var sel = document.getElementById('timer-plan-select');
-    var planId = sel ? sel.value : '';
-    var plan = planId ? findPlan(planId) : null;
+    state.timerPlanId = (sel && sel.value) || state.timerPlanId || '';
+    var plan = state.timerPlanId ? findPlan(state.timerPlanId) : null;
     var labelEl = document.getElementById('timer-label');
     var catEl = document.getElementById('timer-category');
     var modeEl = document.getElementById('timer-mode');
@@ -8362,13 +8408,14 @@ var KG = window.KG || (window.KG = {});
     document.getElementById('btn-bar-stop').addEventListener('click', stopTimer);
 
     document.getElementById('timer-plan-select').addEventListener('change', function () {
-      var plan = this.value ? findPlan(this.value) : null;
+      state.timerPlanId = this.value || '';
+      var plan = state.timerPlanId ? findPlan(state.timerPlanId) : null;
       var labelEl = document.getElementById('timer-label');
       var catEl = document.getElementById('timer-category');
-      if (plan) {
-        if (labelEl && !labelEl.value.trim()) labelEl.value = plan.title || '';
-        if (catEl && plan.category) catEl.value = plan.category;
-      }
+
+      // 换了计划就把标签/科目一起换掉（不再「只在空的时候才填」——那样看着像没反应）
+      if (labelEl) labelEl.value = plan ? (plan.title || '') : '';
+      if (catEl) catEl.value = plan ? (plan.category || '') : '';
     });
     document.getElementById('timer-mode').addEventListener('change', function () {
       state.timerMode = this.value;
@@ -8541,6 +8588,8 @@ var KG = window.KG || (window.KG = {});
     importRecords: importRecords,
     editRecord: editRecord,
     setChartFilter: setChartFilter,
+    setPlanFilter: setPlanFilter,
+    setTimerDist: setTimerDist,
     switchTab: switchTab
   };
 
