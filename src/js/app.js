@@ -203,6 +203,19 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 顶部工具栏状态 ==================== */
 
+  /**
+   * 把页头实际高度写进 --header-h，供吸顶的 Tab 栏定位。
+   * 页头高度不是常数：换了字体、窄到工具栏换行、用户缩放，都会变。
+   */
+  function syncHeaderHeight() {
+    var header = document.querySelector('.app-header');
+    if (!header) return;
+    // 页头不吸顶时（窄屏媒体查询把它改成 static）就不该留偏移量
+    var sticky = window.getComputedStyle(header).position === 'sticky';
+    var h = sticky ? Math.round(header.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--header-h', h + 'px');
+  }
+
   function updateToolbarState() {
     var hasData = state.records.length > 0;
     var btnExport = document.getElementById('btn-export');
@@ -646,8 +659,21 @@ var KG = window.KG || (window.KG = {});
 
     window.addEventListener('resize', function () {
       clearTimeout(window.__kgResizeTimer);
-      window.__kgResizeTimer = setTimeout(function () { KG.Charts.resizeAll(); }, 160);
+      window.__kgResizeTimer = setTimeout(function () {
+        syncHeaderHeight();
+        KG.Charts.resizeAll();
+      }, 160);
     });
+
+    // 页头高度变化（工具栏换行、字号变化）时同步吸顶偏移
+    if (typeof ResizeObserver === 'function') {
+      try {
+        new ResizeObserver(syncHeaderHeight).observe(document.querySelector('.app-header'));
+      } catch (e) { /* 忽略 */ }
+    }
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(syncHeaderHeight).catch(function () {});
+    }
   }
 
   /* ==================== 启动 ==================== */
@@ -664,6 +690,7 @@ var KG = window.KG || (window.KG = {});
 
     bindEvents();
     renderAll();
+    syncHeaderHeight();
 
     var hadStored = false;
     try { hadStored = !!window.localStorage.getItem(Store.KEY); } catch (e) { hadStored = false; }

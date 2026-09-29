@@ -45,14 +45,18 @@
 
 .tabs {
   position: sticky;
-  top: 73px;
+  /* 吸顶偏移量必须等于页头的实际高度。页头高度会随字体渲染、窗口宽度、
+     工具栏换行而变化（1366 下 85px、1024 下 134px），写死数值必然错位、
+     导致 Tab 被页头压住。这里由 app.js 量出真实高度写进 --header-h。 */
+  top: var(--header-h, 73px);
   z-index: 40;
   max-width: 1680px;
   margin: 0 auto;
   padding: 14px 28px 0;
   display: flex;
   gap: 6px;
-  background: linear-gradient(var(--bg) 70%, rgba(245, 246, 248, 0));
+  /* 用不透明白底：吸顶时必须挡住下面滚过的内容，渐变会让内容透出来 */
+  background: var(--bg);
 }
 
 .tab {

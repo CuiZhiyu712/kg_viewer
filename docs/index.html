@@ -1,7 +1,7 @@
 <!--
   考公练习追踪看板（单文件版）
   由 build.py 自动生成，请勿直接修改本文件；改动请修改 src/ 后重新构建。
-  构建时间：2026-09-29 01:19:27
+  构建时间：2026-09-29 15:01:59
   第三方库：已内联 ECharts + SheetJS
   数据来源：仅使用「套卷复盘」XLSX 的第一个 Sheet（粉笔模考）。
   用户数据保存在各自浏览器的 localStorage；绑定数据文件夹后另存为本地 JSON。
@@ -272,14 +272,18 @@ select.input { cursor: pointer; }
 
 .tabs {
   position: sticky;
-  top: 73px;
+  /* 吸顶偏移量必须等于页头的实际高度。页头高度会随字体渲染、窗口宽度、
+     工具栏换行而变化（1366 下 85px、1024 下 134px），写死数值必然错位、
+     导致 Tab 被页头压住。这里由 app.js 量出真实高度写进 --header-h。 */
+  top: var(--header-h, 73px);
   z-index: 40;
   max-width: 1680px;
   margin: 0 auto;
   padding: 14px 28px 0;
   display: flex;
   gap: 6px;
-  background: linear-gradient(var(--bg) 70%, rgba(245, 246, 248, 0));
+  /* 用不透明白底：吸顶时必须挡住下面滚过的内容，渐变会让内容透出来 */
+  background: var(--bg);
 }
 
 .tab {
@@ -912,7 +916,6 @@ select.input { cursor: pointer; }
   body { font-size: 13.5px; }
   .brand-title { font-size: 18.5px; }
   .header-inner, .tabs, .app-main, .lib-banner { padding-left: 18px; padding-right: 18px; }
-  .tabs { top: 69px; }
   .card-body { padding: 16px 16px 18px; }
   .card-head { padding: 12px 16px; }
   .stat-value { font-size: 23px; }
@@ -921,8 +924,8 @@ select.input { cursor: pointer; }
 }
 
 @media (max-width: 1200px) {
-  .header-inner { align-items: flex-start; }
-  .toolbar { width: 100%; }
+  /* 不要强行让工具栏换行：1024 宽度下它其实放得下，强行换行会把页头撑到 134px，
+     加上吸顶的 Tab 栏要钉住四分之一屏幕。交给 flex-wrap 按实际宽度决定即可。 */
   .target-row { gap: 16px; }
   .target-actions { margin-left: 0; width: 100%; }
   .filter-bar { gap: 12px; }
@@ -930,6 +933,9 @@ select.input { cursor: pointer; }
 }
 
 @media (max-width: 900px) {
+  /* 手机上工具栏必然换行、页头很高（约 190px）。再吸顶就等于长期占掉
+     四分之一屏幕，因此手机上让页头随页面滚走，把空间还给内容。 */
+  .app-header { position: static; }
   .tabs { position: static; flex-wrap: wrap; padding-top: 10px; }
   .tab { flex: 1 1 auto; text-align: center; border-radius: var(--radius-sm); }
   .tab.is-active { border-bottom-color: var(--border); }
@@ -941,6 +947,20 @@ select.input { cursor: pointer; }
   .filter-bar .input[type="date"] { width: 100%; }
   .filter-bar .field-inline { flex-wrap: wrap; }
   .toolbar .btn { flex: 1 1 auto; }
+
+  /* 触屏：点击区域不小于 40px（原来 33px，偏小） */
+  .btn, .tab, .chip { min-height: 40px; }
+  .btn-xs { min-height: 34px; }
+  .input { padding-top: 10px; padding-bottom: 10px; }
+
+  /* 缩小栅格最小宽度，让手机上也排得下两列，表单长度减半 */
+  .mod-grid, .mod-grid-info { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+  .summary-grid { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+
+  /* 子模块编辑表（6 列）在小屏上允许横向滚动，而不是把输入框挤到没法用 */
+  .mod-block { overflow-x: auto; }
+  .form-table { min-width: 520px; }
+  .timeplan-table { min-width: 0; }
 }
 
 /* 主表永远允许横向滚动，宁可滚动也不压缩字号 */
@@ -5268,6 +5288,19 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 顶部工具栏状态 ==================== */
 
+  /**
+   * 把页头实际高度写进 --header-h，供吸顶的 Tab 栏定位。
+   * 页头高度不是常数：换了字体、窄到工具栏换行、用户缩放，都会变。
+   */
+  function syncHeaderHeight() {
+    var header = document.querySelector('.app-header');
+    if (!header) return;
+    // 页头不吸顶时（窄屏媒体查询把它改成 static）就不该留偏移量
+    var sticky = window.getComputedStyle(header).position === 'sticky';
+    var h = sticky ? Math.round(header.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--header-h', h + 'px');
+  }
+
   function updateToolbarState() {
     var hasData = state.records.length > 0;
     var btnExport = document.getElementById('btn-export');
@@ -5711,8 +5744,21 @@ var KG = window.KG || (window.KG = {});
 
     window.addEventListener('resize', function () {
       clearTimeout(window.__kgResizeTimer);
-      window.__kgResizeTimer = setTimeout(function () { KG.Charts.resizeAll(); }, 160);
+      window.__kgResizeTimer = setTimeout(function () {
+        syncHeaderHeight();
+        KG.Charts.resizeAll();
+      }, 160);
     });
+
+    // 页头高度变化（工具栏换行、字号变化）时同步吸顶偏移
+    if (typeof ResizeObserver === 'function') {
+      try {
+        new ResizeObserver(syncHeaderHeight).observe(document.querySelector('.app-header'));
+      } catch (e) { /* 忽略 */ }
+    }
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(syncHeaderHeight).catch(function () {});
+    }
   }
 
   /* ==================== 启动 ==================== */
@@ -5729,6 +5775,7 @@ var KG = window.KG || (window.KG = {});
 
     bindEvents();
     renderAll();
+    syncHeaderHeight();
 
     var hadStored = false;
     try { hadStored = !!window.localStorage.getItem(Store.KEY); } catch (e) { hadStored = false; }
