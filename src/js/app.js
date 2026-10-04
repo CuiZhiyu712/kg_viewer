@@ -287,6 +287,7 @@ var KG = window.KG || (window.KG = {});
     requestAnimationFrame(function () {
       KG.Charts.renderPanel(activePanelId(), state.records, state);
       KG.Charts.resizeAll();
+      if (tab === 'records') UI.placeSubPop();
       if (tab === 'plans') UI.renderPlans(state);
       if (tab === 'timer') UI.renderTimer(state);
     });
@@ -1112,9 +1113,10 @@ var KG = window.KG || (window.KG = {});
       if (!btn) return;
       var tr = btn.closest('tr');
       var id = tr && tr.getAttribute('data-id');
+      var act = btn.getAttribute('data-act');
+      if (act === 'sub-col') { UI.toggleSubPop(state, btn.getAttribute('data-key')); return; }
       var rec = state.records.find(function (r) { return r.id === id; });
       if (!rec) return;
-      var act = btn.getAttribute('data-act');
       if (act === 'view') UI.openDetail(rec, state);
       else if (act === 'edit') editRecord(rec);
       else if (act === 'delete') deleteRecord(rec);
@@ -1130,6 +1132,7 @@ var KG = window.KG || (window.KG = {});
       window.__kgResizeTimer = setTimeout(function () {
         syncHeaderHeight();
         KG.Charts.resizeAll();
+        UI.placeSubPop();
       }, 160);
     });
 

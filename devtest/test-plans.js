@@ -125,12 +125,18 @@ const WEEK_END = M.weekEndOf(TODAY);
   s4.planRules.push(M.blankPlanRule({ freq: 'daily', startDate: TODAY, kind: 'week', title: '不合法的组合' }));
   eq(P.materialize(s4, TODAY), 0, '周计划 + 每日循环被忽略（不生成）');
 
-  // 起始日在未来
+  // 起始日在未来（注意：今天是周日时 weekEnd == TODAY，填充窗口到今天就结束）
   const s5 = { plans: [], planRules: [], sessions: [] };
-  s5.planRules.push(M.blankPlanRule({ freq: 'daily', startDate: M.addDays(TODAY, 5), kind: 'day', title: '未来' }));
+  const futureStart = M.addDays(TODAY, 5);
+  s5.planRules.push(M.blankPlanRule({ freq: 'daily', startDate: futureStart, kind: 'day', title: '未来' }));
   const n5 = P.materialize(s5, TODAY);
-  eq(s5.plans[0].date, M.addDays(TODAY, 5), '未来的规则从起始日才开始铺');
-  eq(n5 >= 1, true, '仍会铺本周日之前的那部分');
+  if (futureStart <= WEEK_END) {
+    eq(s5.plans[0].date, futureStart, '未来的规则从起始日才开始铺');
+    eq(n5, Math.round((U.dateValue(WEEK_END) - U.dateValue(futureStart)) / 86400000) + 1, '只铺到本周日为止');
+  } else {
+    eq(n5, 0, '起始日超出填充窗口（今天即周日 / 本周最后一天）时不生成实例');
+    eq(s5.plans.length, 0, '不早于起始日，也不提前铺');
+  }
 
   console.log('--- 分组：今天 / 本周 / 其他 ---');
   const g = P.group(state, TODAY);

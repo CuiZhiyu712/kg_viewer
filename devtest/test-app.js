@@ -203,6 +203,49 @@ function setInput(el, value) {
   eq(added.modules.reasoning.avgAccuracy, 90, '分组模块的平均正确率取自「总计」行输入');
   eq($$('#records-table tbody tr').length, 2, '主表刷新为 2 行');
 
+  console.log('--- 表头小窗：点击言语理解 / 判断推理 ---');
+  const clickEl = (el) => el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  const thBtn = (key) => $(`#records-table thead button[data-act="sub-col"][data-key="${key}"]`);
+  const pop = () => $('#records-table').closest('.table-scroll').querySelector('.sub-pop');
+  const popGrid = () => $$('.sub-pop tbody tr').map((tr) => Array.from(tr.children).map((td) => td.textContent.trim()));
+  const popCls = () => $$('.sub-pop tbody tr').map((tr) => Array.from(tr.children).map((td) => (td.querySelector('.pct') || {}).className || ''));
+  eq($$('#records-table thead button[data-act="sub-col"]').length, 2, '只有言语理解 / 判断推理两个表头可点');
+  eq(pop(), null, '默认不显示小窗');
+  eq($$('#records-table tbody tr').length, 2, '主表 2 行（新增后）');
+
+  clickEl(thBtn('language'));
+  ok(pop(), '点击言语理解表头后出现小窗');
+  eq($('#modal-root .modal'), null, '小窗不是弹窗');
+  eq($$('.sub-pop thead th').map((th) => th.textContent.trim()), ['逻辑填空', '片段阅读', '语句表达'], '小窗列 = 言语理解子模块');
+  eq($$('.sub-pop tbody tr').length, 2, '每个套卷一行（与主表数据行数一致）');
+  eq($$('#records-table tbody tr').length, 2, '主表行数不受影响');
+  eq(popGrid(), [['86.67%', '90%', '80%'], ['60%', '70%', '80%']], '两个套卷的子模块正确率各占一行（第30季 / 第29季）');
+  eq(popCls(), [['pct pct-warn', 'pct pct-ok', 'pct pct-warn'], ['pct pct-bad', 'pct pct-bad', 'pct pct-warn']],
+    '子模块按言语理解的阶段目标着色（目标 90 绿 / 下限 80 黄 / 低于红）');
+  eq(thBtn('language').getAttribute('aria-expanded'), 'true', '表头 aria-expanded = true');
+  ok(thBtn('language').closest('th').classList.contains('is-open'), '表头高亮');
+
+  clickEl(thBtn('reasoning'));
+  eq($$('.sub-pop thead th').map((th) => th.textContent.trim()), ['图形推理', '定义判断', '类比推理', '逻辑判断'], '切到判断推理：4 个子模块列');
+  eq(popGrid(), [['90%', '90%', '100%', '90%'], ['50%', '50%', '100%', '50%']], '判断推理各套卷子模块正确率');
+  eq(popCls(), [['pct pct-ok', 'pct pct-ok', 'pct pct-ok', 'pct pct-ok'], ['pct pct-bad', 'pct pct-bad', 'pct pct-ok', 'pct pct-bad']],
+    '判断推理子模块同样着色（目标 90）');
+
+  clickEl(thBtn('reasoning'));
+  eq(pop(), null, '再点同一个表头收起小窗');
+
+  // 小窗跟随筛选：只剩 1 条时只显示 1 行
+  clickEl(thBtn('language'));
+  setInput($('#filter-keyword'), '第30季');
+  eq($$('#records-table tbody tr').length, 1, '筛选后主表 1 行');
+  eq($$('.sub-pop tbody tr').length, 1, '小窗跟随筛选，同样 1 行');
+  eq(popGrid(), [['86.67%', '90%', '80%']], '小窗行内容 = 被留下的那条');
+  $('#btn-filter-reset').click();
+  eq($$('.sub-pop tbody tr').length, 2, '重置筛选后小窗恢复 2 行');
+  clickEl(thBtn('language'));
+  eq(pop(), null, '收起');
+  eq(errors.length, 0, '小窗交互无 JS 报错' + (errors.length ? ' -> ' + errors.join(' | ') : ''));
+
   console.log('--- 测试 5：统计联动 ---');
   const politicalRow = $$('#stats-table tbody tr')[0].children;
   eq(politicalRow[3].textContent.trim(), '60%', '政治理论平均正确率 = (30+90)/2 = 60%');
