@@ -164,6 +164,78 @@ function cdp(ws) {
     console.log(`  截图 ${name} (${w}x${h})`);
   };
 
+  console.log('=== 表头子模块小窗：与主表逐行对齐（真实布局） ===');
+  // 先往 localStorage 塞两条克隆记录，才能验证多行对齐（测完恢复原状）
+  const origPayload = await evaluate(`localStorage.getItem('kaogong_dashboard')`);
+  const injected = await evaluate(`(() => {
+    const st = JSON.parse(localStorage.getItem('kaogong_dashboard'));
+    const seed = st.records[0];
+    const mk = (id, date, name, bump) => {
+      const r = JSON.parse(JSON.stringify(seed));
+      r.id = id; r.date = date; r.paperName = name; r.raw = null;
+      r.modules.language.subModules.logicalCloze.correct = bump;
+      return r;
+    };
+    st.records.push(mk('t1', '2026-10-03', '测试第1套', 11), mk('t2', '2026-10-10', '测试第2套', 14));
+    localStorage.setItem('kaogong_dashboard', JSON.stringify(st));
+    return st.records.length;
+  })()`);
+  await client.send('Page.reload', {});
+  await sleep(3000);
+  console.log('  临时记录数:', injected);
+  const measureSubPop = async (key) => evaluate(`(() => {
+    document.querySelector('#records-table thead button[data-act="sub-col"][data-key="${key}"]').click();
+    const scroll = document.querySelector('#records-table').closest('.table-scroll');
+    const pop = scroll.querySelector('.sub-pop');
+    if (!pop) return { ok: false, why: '未出现小窗' };
+    pop.scrollIntoView({ block: 'center' });   // 让小窗整体进入视口，elementFromPoint 才有效
+    const th = document.querySelector('#records-table thead th[data-col="${key}"]');
+    const mainHead = document.querySelector('#records-table thead');
+    const popHead = pop.querySelector('thead');
+    const mainRows = [...document.querySelectorAll('#records-table tbody tr')];
+    const popRows = [...pop.querySelectorAll('tbody tr')];
+    const r1 = (el) => { const r = el.getBoundingClientRect(); return { t: Math.round(r.top * 100) / 100, b: Math.round(r.bottom * 100) / 100, l: Math.round(r.left * 100) / 100, r: Math.round(r.right * 100) / 100, h: Math.round(r.height * 10) / 10 }; };
+    const pr = pop.getBoundingClientRect();
+    const hit = document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
+    return {
+      ok: true,
+      cols: [...pop.querySelectorAll('thead th')].map((t) => t.textContent.trim()),
+      rows: popRows.length,
+      mainRows: mainRows.length,
+      headTopDiff: Math.round((r1(popHead).t - r1(mainHead).t) * 100) / 100,
+      headHeight: [r1(mainHead).h, r1(popHead).h],
+      rowTopDiffs: mainRows.map((tr, i) => (popRows[i] ? Math.round((r1(popRows[i]).t - r1(tr).t) * 100) / 100 : null)),
+      rowHeights: mainRows.slice(0, 2).map((tr, i) => [r1(tr).h, popRows[i] ? r1(popRows[i]).h : null]),
+      leftGap: Math.round((r1(pop).l - r1(th).r) * 100) / 100,
+      topGap: Math.round((r1(pop).t - r1(mainHead).t) * 100) / 100,
+      hit: hit ? (hit.className || hit.tagName) : null,
+      hitIsPop: !!(hit && hit.closest('.sub-pop')),
+      colors: [...pop.querySelectorAll('tbody tr:first-child td .pct')].map((el) => getComputedStyle(el).color)
+    };
+  })()`);
+  const subLang = await measureSubPop('language');
+  console.log('  言语理解: ' + JSON.stringify(subLang));
+  const alignOK = subLang.ok && subLang.headTopDiff === 0 && subLang.topGap === 0 && subLang.leftGap === 0
+    && subLang.rowTopDiffs.every((d) => d === 0) && subLang.hitIsPop && subLang.rows === subLang.mainRows;
+  console.log('  => 小窗表头/数据行与主表逐行对齐、贴列右侧: ' + (alignOK ? '成立' : '不成立'));
+  // 第一行 = 测试第2套 93.33/70/80 → 绿(达标) / 红(未达标) / 黄(还需努力)
+  const OK = 'rgb(22, 163, 74)', WARN = 'rgb(217, 119, 6)', BAD = 'rgb(220, 38, 38)';
+  const colorOK = JSON.stringify(subLang.colors) === JSON.stringify([OK, BAD, WARN]);
+  console.log('  => 子模块着色（绿/红/黄，按言语理解目标 90/下限 80）: ' + (colorOK ? '成立' : '不成立 -> ' + JSON.stringify(subLang.colors)));
+  await shot('1b-subpop-language-1920.png', 1920, 1080);
+  const subRea = await measureSubPop('reasoning');   // 再点判断推理（切换），接着再点一次关闭
+  console.log('  判断推理: ' + JSON.stringify({ cols: subRea.cols, rows: subRea.rows, rowTopDiffs: subRea.rowTopDiffs, leftGap: subRea.leftGap }));
+  const reaOK = subRea.ok && subRea.rowTopDiffs.every((d) => d === 0) && subRea.leftGap === 0 && subRea.rows === 3;
+  console.log('  => 判断推理（4 列 × 3 行）同样逐行对齐: ' + (reaOK ? '成立' : '不成立'));
+  await shot('1c-subpop-reasoning-1920.png', 1920, 1080);
+  await measureSubPop('reasoning');
+  const closed = await evaluate(`!document.querySelector('#records-table').closest('.table-scroll').querySelector('.sub-pop')`);
+  console.log('  => 再次点击表头后小窗关闭: ' + (closed ? '成立' : '不成立'));
+  await evaluate(`localStorage.setItem('kaogong_dashboard', ${JSON.stringify(origPayload)})`);
+  await client.send('Page.reload', {});
+  await sleep(3000);
+  console.log('  已恢复原始数据:', await evaluate(`document.querySelectorAll('#records-table tbody tr').length`) + ' 条');
+
   console.log('=== 截图 ===');
   await shot('1-records-1920.png', 1920, 1080);
 

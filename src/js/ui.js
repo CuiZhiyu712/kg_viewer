@@ -191,6 +191,10 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 模块一：主表 ==================== */
 
+  /* 表头「言语理解 / 判断推理」点击后，在列右侧展开各套卷子模块正确率小窗；
+     同一时刻只开一列，小窗的行与主表数据行一一对齐 */
+  var openSubCol = null;
+
   function filterRecords(state) {
     var f = state.filter;
     var kw = (f.keyword || '').trim().toLowerCase();
@@ -228,18 +232,26 @@ var KG = window.KG || (window.KG = {});
     var empty = document.getElementById('records-empty');
 
     var cols = ['日期', '试卷', '分数', '平均分', '击败比'];
-    var moduleCols = M.MODULES.map(function (d) { return d.name; });
     var headHtml = '<tr>' +
       cols.map(function (c, i) {
         var num = i >= 2 ? ' class="num"' : '';
         return '<th' + num + '>' + esc(c) + '</th>';
       }).join('') +
-      moduleCols.map(function (c) { return '<th class="num">' + esc(c) + '</th>'; }).join('') +
+      M.MODULES.map(function (def) {
+        if (!M.SUBMODULES[def.key]) return '<th class="num">' + esc(def.name) + '</th>';
+        var open = openSubCol === def.key;
+        return '<th class="num sub-th' + (open ? ' is-open' : '') + '" data-col="' + esc(def.key) + '">' +
+          '<button type="button" class="sub-th-toggle" data-act="sub-col" data-key="' + esc(def.key) + '"' +
+          ' aria-expanded="' + (open ? 'true' : 'false') + '" title="点击查看各套卷的子模块正确率">' +
+          esc(def.name) + '<span class="sub-caret" aria-hidden="true">▾</span></button></th>';
+      }).join('') +
       '<th class="num">总用时</th><th class="ops">操作</th></tr>';
     thead.innerHTML = headHtml;
 
     U.setHtml(document.getElementById('records-count'),
       '共 ' + state.records.length + ' 条' + (list.length !== state.records.length ? '（筛选后 ' + list.length + ' 条）' : ''));
+
+    renderSubPop(state, list);   // 放在空列表分支之前：筛到空时要顺手把小窗也收掉
 
     if (!list.length) {
       tbody.innerHTML = '';
@@ -274,6 +286,80 @@ var KG = window.KG || (window.KG = {});
         '</td>' +
       '</tr>';
     }).join('');
+  }
+
+  /**
+   * 子模块正确率小窗：贴在被点表头列的右侧，行与主表数据行一一对齐
+   * （单元格规格复用 .data-table，行高与主表一致才能对齐），不标日期。
+   * 着色沿用该列模块的阶段目标 / 黄色下限。
+   */
+  function renderSubPop(state, list) {
+    var table = document.getElementById('records-table');
+    if (!table) return;
+    var scroll = table.closest('.table-scroll');
+    if (!scroll) return;
+    var old = scroll.querySelector('.sub-pop');
+    if (old) old.parentNode.removeChild(old);
+    if (!openSubCol) return;
+    if (!list.length) { openSubCol = null; return; }   // 没有数据可展示就顺手复位，避免下次凭空冒出来
+
+    var target = state.targets[openSubCol] || M.DEFAULT_TARGETS[openSubCol];
+    var subs = M.SUBMODULES[openSubCol] || [];
+    var headCells = subs.map(function (s) { return '<th class="num">' + esc(s.name) + '</th>'; }).join('');
+    var rows = list.map(function (r) {
+      var mod = (r.modules && r.modules[openSubCol]) || {};
+      var sms = mod.subModules || {};
+      var cells = subs.map(function (s) {
+        var sm = sms[s.key] || {};
+        return '<td class="num">' + pctHtml(U.calcAccuracy(sm.questions, sm.correct), target.target, target.warning) + '</td>';
+      }).join('');
+      return '<tr data-id="' + esc(r.id) + '">' + cells + '</tr>';
+    }).join('');
+
+    var el = document.createElement('div');
+    el.className = 'sub-pop';
+    el.innerHTML = '<table class="data-table sub-pop-table">' +
+      '<thead><tr>' + headCells + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    scroll.appendChild(el);
+    placeSubPop();
+  }
+
+  /** 让已打开的小窗重新贴合所点表头（窗口缩放、从别的页签切回来时需要） */
+  function placeSubPop() {
+    var table = document.getElementById('records-table');
+    if (!table) return;
+    var scroll = table.closest('.table-scroll');
+    if (!scroll) return;
+    var el = scroll.querySelector('.sub-pop');
+    var th = openSubCol && table.querySelector('thead th[data-col="' + openSubCol + '"]');
+    var head = table.querySelector('thead');
+    if (!el || !th || !head) return;
+    if (!th.getBoundingClientRect().width) return;   // 面板隐藏时量不到，等切回来再定位
+    var base = scroll.getBoundingClientRect();
+    var thr = th.getBoundingClientRect();
+    var hr = head.getBoundingClientRect();
+    el.style.left = (thr.right - base.left + scroll.scrollLeft) + 'px';
+    el.style.top = (hr.top - base.top + scroll.scrollTop) + 'px';   // 名称行与主表表头同一行
+    syncSubPopRows(table, el.querySelector('table'));
+  }
+
+  /* 主表行里「操作」列按钮比纯文字高，行高会多出几像素；
+     把小窗每行的高度照抄主表对应行，保证逐行对齐不漂移 */
+  function syncSubPopRows(mainTable, popTable) {
+    var pairs = [[mainTable.querySelector('thead tr'), popTable.querySelector('thead tr')]];
+    var mainRows = mainTable.querySelectorAll('tbody tr');
+    var popRows = popTable.querySelectorAll('tbody tr');
+    for (var i = 0; i < popRows.length && i < mainRows.length; i++) pairs.push([mainRows[i], popRows[i]]);
+    pairs.forEach(function (pair) {
+      if (!pair[0] || !pair[1]) return;
+      pair[1].style.height = pair[0].getBoundingClientRect().height + 'px';
+    });
+  }
+
+  /** 开 / 关某列的子模块小窗（再点同一表头即关闭） */
+  function toggleSubPop(state, key) {
+    openSubCol = openSubCol === key ? null : key;
+    renderRecordsTable(state);
   }
 
   /* ==================== 模块二：统计表 ==================== */
@@ -2107,6 +2193,8 @@ var KG = window.KG || (window.KG = {});
     renderSettings: renderSettings,
     readSettingsForm: readSettingsForm,
     renderRecordsTable: renderRecordsTable,
+    toggleSubPop: toggleSubPop,
+    placeSubPop: placeSubPop,
     filterRecords: filterRecords,
     renderStatsTable: renderStatsTable,
     renderTimeAnalysis: renderTimeAnalysis,

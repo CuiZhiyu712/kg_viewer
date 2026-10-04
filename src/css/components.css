@@ -2,7 +2,7 @@
 
 /* ---------------- 数据表格 ---------------- */
 
-.table-scroll { overflow-x: auto; overflow-y: visible; }
+.table-scroll { overflow-x: auto; overflow-y: visible; position: relative; }
 
 .data-table {
   width: 100%;
@@ -38,6 +38,45 @@
 .data-table .ops .btn + .btn { margin-left: 6px; }
 .data-table .paper-name { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
 .data-table .module-name { font-weight: 500; }
+
+/* 表头「言语理解 / 判断推理」：点击在该列右侧展开各套卷的子模块正确率小窗 */
+.data-table .sub-th-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -4px -7px;
+  padding: 4px 7px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.data-table .sub-th-toggle:hover { color: var(--primary); }
+.data-table .sub-th-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--primary-ring); }
+.data-table .sub-th.is-open .sub-th-toggle { color: var(--primary); }
+.data-table .sub-caret {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-faint);
+  transition: transform .16s, color .16s;
+}
+.data-table .sub-th-toggle .sub-caret { transform: rotate(-90deg); }
+.data-table .sub-th.is-open .sub-caret { transform: none; color: var(--primary); }
+
+/* 小窗本体：单元格规格复用 .data-table（行高与主表一致才能逐行对齐） */
+.sub-pop {
+  position: absolute;
+  z-index: 4;
+  overflow: hidden;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--border-strong), 0 12px 32px rgba(16, 24, 40, .18);
+}
+.sub-pop-table { width: auto; }
+.sub-pop-table thead th { position: static; }
+.sub-pop-table tbody tr:last-child td { border-bottom: none; }
 
 .empty-state {
   padding: 34px 16px;
