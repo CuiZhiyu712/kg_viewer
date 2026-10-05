@@ -118,7 +118,7 @@ src/                    ← 源码（改这里）
         excel-import.js excel-export.js csv-export.js statistics.js
         charts.js ui.js app.js
 vendor/                 ← ECharts / SheetJS 原始文件，供 build.py 内联
-docs/index.html         ← 部署产物（GitHub Pages 来源选 main /docs）
+docs/index.html         ← 部署产物（同 feishu 分支根目录的 index.html；线上 Pages 来源是 feishu 分支）
 feishu/                 ← 飞书部署说明（功能本身已并入 src/）
 data/                   ← 绑定数据文件夹后，kaogong_data.json 落在这里
 devtest/                ← 验证脚本（Node + jsdom + headless Chrome）

@@ -6,23 +6,29 @@
 | --- | --- |
 | 仓库 | `git@github.com:CuiZhiyu712/kg_viewer.git`（**公开**） |
 | 站点地址 | https://cuizhiyu712.github.io/kg_viewer/ |
-| Pages 来源 | `main` 分支 / `docs` 文件夹 |
-| 部署产物 | `docs/index.html`（由 `python build.py` 生成，已内联 ECharts + SheetJS） |
+| Pages 来源 | `feishu` 分支 / 根目录（`index.html`） |
+| 部署产物 | `index.html`（= `python build.py` 的单文件产物，逐字节相同；`docs/index.html` 是同内容的备用产物） |
 
 ## 一次性配置
 
 1. 推到 GitHub 后，打开仓库 **Settings → Pages**
 2. **Source** 选 `Deploy from a branch`
-3. **Branch** 选 `main`，文件夹选 **`/docs`**，点 **Save**
+3. **Branch** 选 `feishu`，文件夹选 **`/ (root)`**，点 **Save**
 4. 等 1~2 分钟，访问 https://cuizhiyu712.github.io/kg_viewer/
 
 ## 日常更新
 
+**默认只推送 `feishu` 分支，不推 `main`**——`feishu` 是 `main` 的超集（同样有全部源码，
+外加站点入口 `index.html` 和 `.nojekyll`），推它一个就够。`main` 只作为本地工作分支。
+
 ```bash
-python build.py          # 改完 src/ 后重新生成 docs/index.html
-git add -A
-git commit -m "更新看板"
-git push
+python build.py                    # 改完 src/ 后重新生成单文件产物
+git add -A && git commit -m "更新看板"        # 提交在本地 main
+git checkout feishu && git merge main        # 同步到 feishu
+cp 考公练习追踪看板.html index.html            # 刷新站点入口
+git add index.html && git commit -m "同步 main：更新看板"
+git push origin feishu                       # 只推 feishu
+git checkout main
 ```
 
 Pages 会自动重建（约 1 分钟）。浏览器可能缓存旧版本，用 **Ctrl+F5** 强刷。
