@@ -210,12 +210,15 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 模块正确率趋势 ================= */
 
-  function renderModule(records, mode) {
-    var points = S.moduleSeries(records).points;
-    var keys = mode === 'all' ? M.MODULES.map(function (d) { return d.key; }) : [mode];
+  function renderModule(records, mode, template) {
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    var points = S.moduleSeries(records, template).points;
+    var keys = mode === 'all' ? tmods.map(function (d) { return d.key; }) : [mode];
 
     var series = keys.map(function (key) {
-      var def = M.moduleDef(key);
+      var def = null;
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === key) { def = tmods[i]; break; }
+      if (!def) def = M.moduleDef(key) || { name: key };
       return {
         name: def.name,
         type: 'line',
@@ -263,8 +266,9 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 用时趋势 ================= */
 
-  function renderTime(records, mode) {
-    var points = S.timeSeries(records);
+  function renderTime(records, mode, template) {
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    var points = S.timeSeries(records, template);
 
     var series = [];
     if (mode === 'total') {
@@ -280,7 +284,9 @@ var KG = window.KG || (window.KG = {});
         data: points.map(function (p) { return p.totalTime; })
       });
     } else {
-      var def = M.moduleDef(mode);
+      var def = null;
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === mode) { def = tmods[i]; break; }
+      if (!def) def = M.moduleDef(mode) || { name: mode };
       series.push({
         name: def.name + '用时',
         type: 'line',
@@ -294,7 +300,10 @@ var KG = window.KG || (window.KG = {});
       });
     }
 
-    var modeName = mode === 'total' ? '总用时' : (M.moduleDef(mode).name + '用时');
+    var modeName = mode === 'total' ? '总用时' : ((function () {
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === mode) return tmods[i].name + '用时';
+      return M.moduleDef(mode) ? M.moduleDef(mode).name + '用时' : '用时';
+    })());
 
     return {
       grid: baseGrid(),
@@ -323,9 +332,10 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 用时分析：实际 vs 计划 ================= */
 
-  function renderTimeAnalysis(records, timePlan, mode, focusId) {
-    var points = S.timeSeries(records);
-    var plan = M.normalizeTimePlan(timePlan);
+  function renderTimeAnalysis(records, timePlan, mode, focusId, template) {
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    var points = S.timeSeries(records, template);
+    var plan = M.normalizeTimePlan(timePlan, template);
     var focus = S.pickFocus ? S.pickFocus(S.sortedAsc(records), focusId) : null;
 
     var isTotal = mode === 'total';
@@ -334,10 +344,12 @@ var KG = window.KG || (window.KG = {});
     if (isTotal) {
       seriesName = '总用时';
       values = points.map(function (p) { return p.totalTime; });
-      planValue = M.timePlanTotal(plan);
+      planValue = M.timePlanTotal(plan, template);
       color = COLOR_TOTAL_TIME;
     } else {
-      var def = M.moduleDef(mode) || M.MODULES[0];
+      var def = null;
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === mode) { def = tmods[i]; break; }
+      if (!def) def = M.moduleDef(mode) || M.MODULES[0];
       seriesName = def.name + '用时';
       values = points.map(function (p) { return p[def.key]; });
       planValue = plan[def.key] ? plan[def.key].plan : null;
@@ -489,7 +501,10 @@ var KG = window.KG || (window.KG = {});
    */
   function renderPanel(panelId, records, state) {
     var ok = true;
-    var isEmpty = !records.length;
+    // records 现在按面板各自决定：趋势按 trendTemplateId、用时按 timeTemplateId、统计按默认模版
+    // 仍接受外部传入 records 兼容旧调用，但优先用面板内逻辑
+    state = state || {};
+    if (!records) records = (state.records || []);
 
     function toggle(id, show) {
       var box = document.getElementById(id);
@@ -498,23 +513,50 @@ var KG = window.KG || (window.KG = {});
       if (ph) ph.hidden = show;
     }
 
+    var isEmpty = !records.length;
+
     if (panelId === 'panel-trend') {
-      toggle('chart-score', !isEmpty);
-      toggle('chart-module', !isEmpty);
-      toggle('chart-time', !isEmpty);
-      if (isEmpty) return true;
-      ok = apply('chart-score', renderScore(records, state.settings, state.chartFilter.score)) && ok;
-      ok = apply('chart-module', renderModule(records, state.chartFilter.module)) && ok;
-      ok = apply('chart-time', renderTime(records, state.chartFilter.time)) && ok;
+      var tTpl = state.trendTemplateId;
+      var tList = [];
+      if (tTpl === 'all') {
+        // 跨模版合并：按 key 取并集，去重
+        var seen = {};
+        (state.templates || []).forEach(function (tpl) {
+          (tpl.modules || []).forEach(function (m) {
+            if (!seen[m.key]) { seen[m.key] = true; tList.push(m); }
+          });
+        });
+      } else {
+        var tpl0 = M.findTemplate(state.templates, tTpl);
+        tList = tpl0.modules || M.MODULES;
+      }
+      var trendRecs = tTpl === 'all'
+        ? state.records.slice()
+        : state.records.filter(function (r) { return (r.templateId || 'default') === tTpl; });
+      var trendTpl = { modules: tList };
+      var trendEmpty = !trendRecs.length;
+      toggle('chart-score', !trendEmpty);
+      toggle('chart-module', !trendEmpty);
+      toggle('chart-time', !trendEmpty);
+      if (trendEmpty) return true;
+      ok = apply('chart-score', renderScore(trendRecs, state.settings, state.chartFilter.score)) && ok;
+      ok = apply('chart-module', renderModule(trendRecs, state.chartFilter.module, trendTpl)) && ok;
+      ok = apply('chart-time', renderTime(trendRecs, state.chartFilter.time, trendTpl)) && ok;
     } else if (panelId === 'panel-stats') {
-      toggle('chart-stats-module', !isEmpty);
-      if (isEmpty) return true;
-      ok = apply('chart-stats-module', renderModule(records, state.chartFilter.statsModule)) && ok;
+      var statsRecs = state.records.filter(function (r) { return !r.templateId || r.templateId === 'default'; });
+      var statsEmpty = !statsRecs.length;
+      toggle('chart-stats-module', !statsEmpty);
+      if (statsEmpty) return true;
+      ok = apply('chart-stats-module', renderModule(statsRecs, state.chartFilter.statsModule)) && ok;
     } else if (panelId === 'panel-time') {
-      toggle('chart-time-analysis', !isEmpty);
-      if (isEmpty) return true;
+      var timeTplId = state.timeTemplateId || 'default';
+      var timeTpl = M.findTemplate(state.templates, timeTplId);
+      var timeRecs = state.records.filter(function (r) { return (r.templateId || 'default') === timeTplId; });
+      var timePlan = (state.timePlans && state.timePlans[timeTplId]) || M.normalizeTimePlan(null, timeTpl);
+      toggle('chart-time-analysis', !timeRecs.length);
+      if (!timeRecs.length) return true;
       ok = apply('chart-time-analysis',
-        renderTimeAnalysis(records, state.timePlan, state.chartFilter.timeAnalysis, state.timeFocusId)) && ok;
+        renderTimeAnalysis(timeRecs, timePlan, state.chartFilter.timeAnalysis, state.timeFocusId, timeTpl)) && ok;
     }
     return ok;
   }

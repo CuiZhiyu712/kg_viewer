@@ -467,7 +467,22 @@ var KG = window.KG || (window.KG = {});
   }
 
   function renderChartSwitches(state) {
-    var moduleItems = [{ key: 'all', label: '全部' }].concat(M.MODULES.map(function (d) {
+    /* 趋势分析：选「全部」时跨模版合并同名 key；选具体模版时只列该模版 modules */
+    var trendTplId = state.trendTemplateId || 'all';
+    var trendMods;
+    if (trendTplId === 'all') {
+      var seen = {};
+      trendMods = [];
+      (state.templates || []).forEach(function (tpl) {
+        (tpl.modules || []).forEach(function (m) {
+          if (!seen[m.key]) { seen[m.key] = true; trendMods.push(m); }
+        });
+      });
+    } else {
+      var t = M.findTemplate(state.templates, trendTplId);
+      trendMods = t.modules || M.MODULES;
+    }
+    var trendModuleItems = [{ key: 'all', label: '全部' }].concat(trendMods.map(function (d) {
       return { key: d.key, label: d.name };
     }));
     chartSwitch('trend-score-switch', [
@@ -476,21 +491,42 @@ var KG = window.KG || (window.KG = {});
       { key: 'score', label: '分数' }
     ], state.chartFilter.score, function (k) { KG.App.setChartFilter('score', k); });
 
-    chartSwitch('trend-module-switch', moduleItems, state.chartFilter.module, function (k) {
+    chartSwitch('trend-module-switch', trendModuleItems, state.chartFilter.module, function (k) {
       KG.App.setChartFilter('module', k);
     });
 
-    chartSwitch('trend-time-switch', [{ key: 'total', label: '总用时' }].concat(M.MODULES.map(function (d) {
+    chartSwitch('trend-time-switch', [{ key: 'total', label: '总用时' }].concat(trendMods.map(function (d) {
       return { key: d.key, label: d.name };
     })), state.chartFilter.time, function (k) { KG.App.setChartFilter('time', k); });
 
-    chartSwitch('stats-module-switch', moduleItems, state.chartFilter.statsModule, function (k) {
+    /* 统计表 / 用时分析仍按各自模版的 modules 列出（统计只服务默认模版，用时分析按选中模版） */
+    var statsMods = M.MODULES;
+    var statsModuleItems = [{ key: 'all', label: '全部' }].concat(statsMods.map(function (d) {
+      return { key: d.key, label: d.name };
+    }));
+    chartSwitch('stats-module-switch', statsModuleItems, state.chartFilter.statsModule, function (k) {
       KG.App.setChartFilter('statsModule', k);
     });
 
-    chartSwitch('time-analysis-switch', [{ key: 'total', label: '总用时' }].concat(M.MODULES.map(function (d) {
+    var timeTplId = state.timeTemplateId || 'default';
+    var timeTpl = M.findTemplate(state.templates, timeTplId);
+    var timeMods = timeTpl.modules || M.MODULES;
+    chartSwitch('time-analysis-switch', [{ key: 'total', label: '总用时' }].concat(timeMods.map(function (d) {
       return { key: d.key, label: d.name };
     })), state.chartFilter.timeAnalysis, function (k) { KG.App.setChartFilter('timeAnalysis', k); });
+  }
+
+  /** 趋势分析的模版下拉：'all' = 跨模版合并 + 各模版可选 */
+  function renderTrendTemplateSelect(state) {
+    var sel = document.getElementById('trend-template');
+    if (!sel) return;
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var opts = ['<option value="all"' + (state.trendTemplateId === 'all' ? ' selected' : '') + '>全部模版（按模块合并）</option>']
+      .concat(templates.map(function (t) {
+        return '<option value="' + esc(t.id) + '"' + (t.id === state.trendTemplateId ? ' selected' : '') + '>' +
+          esc(t.name) + (t.isDefault ? '（默认）' : '') + '</option>';
+      }).join(''));
+    sel.innerHTML = opts.join('');
   }
 
   /* ==================== 套卷表单（新增 / 编辑） ==================== */
@@ -1911,15 +1947,33 @@ var KG = window.KG || (window.KG = {});
     sel.disabled = !o.allRecords.length;
   }
 
+  function renderTimeTemplateSelect(state, selectedId) {
+    var sel = document.getElementById('time-template');
+    if (!sel) return;
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var opts = templates.map(function (t) {
+      return '<option value="' + esc(t.id) + '"' + (t.id === selectedId ? ' selected' : '') + '>' +
+        esc(t.name) + (t.isDefault ? '（默认）' : '') + '</option>';
+    }).join('');
+    sel.innerHTML = opts;
+  }
+
   function renderTimeAnalysis(state) {
-    var defaultRecs = state.records.filter(function (r) { return !r.templateId || r.templateId === 'default'; });
-    var o = S.timeOverview(defaultRecs, state.timePlan, state.timeFocusId);
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var tplId = state.timeTemplateId;
+    if (!tplId || !templates.some(function (t) { return t.id === tplId; })) tplId = 'default';
+    var tpl = M.findTemplate(templates, tplId);
+    renderTimeTemplateSelect(state, tplId);
+
+    var recs = state.records.filter(function (r) { return (r.templateId || 'default') === tplId; });
+    var plan = state.timePlans && state.timePlans[tplId] ? state.timePlans[tplId] : M.normalizeTimePlan(null, tpl);
+    var o = S.timeOverview(recs, plan, state.timeFocusId, tpl);
 
     renderTimeFocusSelect(state, o);
 
     var focus = o.focus;
     U.setHtml(document.getElementById('time-hint'),
-      defaultRecs.length
+      recs.length
         ? '第 ' + focus.index + '/' + focus.total + ' 套 · ' + (focus.paperName || '未命名') +
           '（' + (focus.date || '—') + '）' + (focus.isLatest ? ' · 最近一次' : '')
         : '');
@@ -1965,7 +2019,7 @@ var KG = window.KG || (window.KG = {});
 
     /* 超时排行 */
     var rankBox = document.getElementById('time-ranking');
-    if (!defaultRecs.length) {
+    if (!recs.length) {
       rankBox.innerHTML = '<div class="hint">暂无数据。</div>';
     } else if (!o.ranking.length) {
       rankBox.innerHTML = '<div class="hint">还没有可比较的模块（需要先设标准用时，且有实际用时）。</div>';
@@ -1986,9 +2040,9 @@ var KG = window.KG || (window.KG = {});
     /* 计划与子模块之和不一致的提示 */
     var note = document.getElementById('time-plan-note');
     var mism = [];
-    M.MODULES.forEach(function (def) {
-      M.timePlanMismatch(state.timePlan, def.key).forEach(function (d) {
-        mism.push(def.name + '：' + d);
+    (tpl.modules || M.MODULES).forEach(function (mod) {
+      M.timePlanMismatch(plan, mod.key, tpl).forEach(function (d) {
+        mism.push(mod.name + '：' + d);
       });
     });
     if (mism.length) {
@@ -2008,10 +2062,10 @@ var KG = window.KG || (window.KG = {});
       '<th class="num">历史平均</th><th class="num">差值</th><th class="num">最大</th><th class="num">最小</th>' +
       '<th class="center">状态</th></tr>';
 
-    if (!defaultRecs.length) {
+    if (!recs.length) {
       table.querySelector('tbody').innerHTML = '';
       empty.hidden = false;
-      empty.innerHTML = '<p>暂无数据，先添加或导入套卷记录。</p>';
+      empty.innerHTML = '<p>该模版下暂无套卷记录，先添加或导入。</p>';
       return;
     }
     empty.hidden = true;
@@ -2033,10 +2087,12 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 标准用时编辑 ==================== */
 
-  function openTimePlanForm(state, onSubmit) {
-    var plan = M.normalizeTimePlan(state.timePlan);
+  function openTimePlanForm(state, template, onSubmit) {
+    var tpl = template || M.DEFAULT_TEMPLATE;
+    var existing = (state.timePlans && state.timePlans[tpl.id]) || null;
+    var plan = M.normalizeTimePlan(existing, tpl);
 
-    function rowHtml(key, name, level, value, parent) {
+    function rowHtml(key, name, level, value) {
       return '<tr data-key="' + esc(key) + '" class="' + (level === 'sub' ? 'time-sub-row' : '') + '">' +
         '<td class="time-name' + (level === 'sub' ? ' is-sub' : '') + '">' + esc(name) + '</td>' +
         '<td><input type="number" class="input input-sm" min="0" step="0.5" data-field="plan" ' +
@@ -2045,32 +2101,32 @@ var KG = window.KG || (window.KG = {});
     }
 
     var rows = '';
-    M.MODULES.forEach(function (def) {
-      var p = plan[def.key];
-      rows += rowHtml(def.key, def.name, 'module', p.plan);
-      if (M.SUBMODULES[def.key]) {
-        M.SUBMODULES[def.key].forEach(function (s) {
-          rows += rowHtml(def.key + '.' + s.key, s.name, 'sub', p.subs ? p.subs[s.key] : null);
+    (tpl.modules || M.MODULES).forEach(function (mod) {
+      var p = plan[mod.key] || { plan: null, subs: null };
+      rows += rowHtml(mod.key, mod.name, 'module', p.plan);
+      if (mod.hasSub && mod.subModules) {
+        mod.subModules.forEach(function (s) {
+          rows += rowHtml(mod.key + '.' + s.key, s.name, 'sub', p.subs ? p.subs[s.key] : null);
         });
       }
     });
 
     openModal({
-      title: '编辑标准用时（分钟）',
+      title: '编辑标准用时（分钟）· ' + (tpl.name || '默认模版'),
       size: 'modal-md',
-      body: '<p class="modal-hint">这里是每题型的计划用时，用于「模块四：用时分析」里的达成率、超时排行和趋势图上的标准线。' +
+      body: '<p class="modal-hint">这里是「' + esc(tpl.name || '默认模版') + '」每题型的计划用时，' +
+        '用于「模块四：用时分析」里的达成率、超时排行和趋势图上的标准线。' +
         '留空表示不设标准（该行状态显示「未设标准」，不参与排行）。模块与其子模块都可以单独修改。</p>' +
         '<table class="form-table timeplan-table"><thead><tr><th>模块 / 子模块</th><th>标准用时（分钟）</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>' +
         '<div class="summary-grid" style="margin-top:12px">' +
-          '<div class="summary-item"><span>六大模块标准用时合计</span><b data-plan-total>—</b></div>' +
+          '<div class="summary-item"><span>该模版标准用时合计</span><b data-plan-total>—</b></div>' +
         '</div>',
       footer:
         '<button type="button" class="btn" data-act="reset">恢复默认</button>' +
         '<button type="button" class="btn" data-act="cancel">取消</button>' +
         '<button type="button" class="btn btn-primary" data-act="save">保存标准用时</button>',
       onMount: function (a) {
-        /** 表格每行都有，读出来就是完整结构；空输入框 => null（不设标准） */
         function readRows() {
           var out = {};
           a.root.querySelectorAll('tr[data-key]').forEach(function (tr) {
@@ -2089,7 +2145,7 @@ var KG = window.KG || (window.KG = {});
           return out;
         }
         function refreshTotal() {
-          var v = M.timePlanTotal(readRows());
+          var v = M.timePlanTotal(readRows(), tpl);
           a.root.querySelector('[data-plan-total]').textContent = v === null ? '—' : U.fmtNum(v, 0) + ' 分钟';
         }
         a.body.addEventListener('input', refreshTotal);
@@ -2097,7 +2153,7 @@ var KG = window.KG || (window.KG = {});
 
         a.root.querySelector('[data-act="cancel"]').addEventListener('click', a.close);
         a.root.querySelector('[data-act="reset"]').addEventListener('click', function () {
-          var d = M.normalizeTimePlan(null);
+          var d = M.normalizeTimePlan(null, tpl);
           a.root.querySelectorAll('tr[data-key]').forEach(function (tr) {
             var key = tr.getAttribute('data-key');
             var v;
@@ -2112,7 +2168,7 @@ var KG = window.KG || (window.KG = {});
           toast('已恢复为默认标准用时，点「保存标准用时」生效', 'info');
         });
         a.root.querySelector('[data-act="save"]').addEventListener('click', function () {
-          onSubmit(M.normalizeTimePlan(readRows()));
+          onSubmit(M.normalizeTimePlan(readRows(), tpl));
           a.close();
         });
       }
@@ -2556,6 +2612,7 @@ var KG = window.KG || (window.KG = {});
     openPomoConfigForm: openPomoConfigForm,
     categoryOptionsHtml: categoryOptionsHtml,
     renderChartSwitches: renderChartSwitches,
+    renderTrendTemplateSelect: renderTrendTemplateSelect,
     openRecordForm: openRecordForm,
     openDetail: openDetail,
     openTargetsForm: openTargetsForm,

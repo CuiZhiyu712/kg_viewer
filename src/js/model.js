@@ -125,23 +125,28 @@ var KG = window.KG || (window.KG = {});
     dataAnalysis: { plan: 25, subs: null }
   };
 
-  /** 生成一份完整的标准用时（缺失模块用默认值补齐） */
-  function normalizeTimePlan(tp) {
+  /** 生成一份完整的标准用时（缺失模块用默认值补齐）。
+   *  template 可选：传入时按该模版的 modules 列表生成（自定义模版走这条路径）；
+   *  不传时按默认 6 模块生成（向后兼容 statistics 旧调用）。 */
+  function normalizeTimePlan(tp, template) {
+    var tmods = template && template.modules ? template.modules : MODULES;
     var out = {};
-    MODULES.forEach(function (def) {
-      var d = DEFAULT_TIME_PLAN[def.key] || { plan: null, subs: null };
-      var v = (tp && tp[def.key]) || {};
+    tmods.forEach(function (tmod) {
+      var key = tmod.key;
+      var d = DEFAULT_TIME_PLAN[key] || { plan: null, subs: null };
+      var v = (tp && tp[key]) || {};
       var subs = null;
-      if (SUBMODULES[def.key]) {
+      var subDefs = tmod.hasSub ? (tmod.subModules || []) : (SUBMODULES[key] || null);
+      if (subDefs) {
         var ds = d.subs || {};
         subs = {};
-        SUBMODULES[def.key].forEach(function (s) {
+        subDefs.forEach(function (s) {
           var src = (v.subs && v.subs[s.key] !== undefined) ? v.subs[s.key] : ds[s.key];
           subs[s.key] = U.toNumber(src);
         });
       }
       // 只有「键缺失」才补默认值；显式 null 表示用户主动清空（不设标准），必须保留
-      out[def.key] = {
+      out[key] = {
         plan: v.plan === undefined ? U.toNumber(d.plan) : U.toNumber(v.plan),
         subs: subs
       };
@@ -149,24 +154,28 @@ var KG = window.KG || (window.KG = {});
     return out;
   }
 
-  /** 六大模块标准用时合计 */
-  function timePlanTotal(tp) {
+  /** 标准用时合计（按模版 modules 求和；缺省时退回默认 6 模块） */
+  function timePlanTotal(tp, template) {
+    var tmods = template && template.modules ? template.modules : MODULES;
     var sum = 0, has = false;
-    MODULES.forEach(function (def) {
-      var p = tp && tp[def.key] ? U.toNumber(tp[def.key].plan) : null;
+    tmods.forEach(function (tmod) {
+      var p = tp && tp[tmod.key] ? U.toNumber(tp[tmod.key].plan) : null;
       if (p !== null) { sum += p; has = true; }
     });
     return has ? U.round(sum, 2) : null;
   }
 
-  /** 分组模块的「模块标准用时」与其子模块之和是否不一致 */
-  function timePlanMismatch(tp, key) {
-    if (!SUBMODULES[key] || !tp || !tp[key]) return [];
+  /** 分组模块的「模块标准用时」与其子模块之和是否不一致（按模版 modules 判定） */
+  function timePlanMismatch(tp, key, template) {
+    var tmods = template && template.modules ? template.modules : MODULES;
+    var tmod = null;
+    for (var i = 0; i < tmods.length; i++) if (tmods[i].key === key) { tmod = tmods[i]; break; }
+    if (!tmod || !tmod.hasSub || !tp || !tp[key]) return [];
     var m = U.toNumber(tp[key].plan);
     if (m === null) return [];
     var subs = tp[key].subs || {};
     var sum = 0, has = false;
-    SUBMODULES[key].forEach(function (s) {
+    (tmod.subModules || []).forEach(function (s) {
       var v = U.toNumber(subs[s.key]);
       if (v !== null) { sum += v; has = true; }
     });

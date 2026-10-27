@@ -8,7 +8,7 @@ var KG = window.KG || (window.KG = {});
   var M = KG.Model;
 
   var KEY = 'kaogong_dashboard';
-  var VERSION = 2;
+  var VERSION = 3;
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -25,12 +25,19 @@ var KG = window.KG || (window.KG = {});
 
   function defaultTimePlan() { return M.normalizeTimePlan(null); }
 
+  /** 标准用时按模版独立：{ default: {...}, <tplId>: {...} }。
+   *  缺失模版的 timePlan 在 fillDefaults 里按各自模版补齐。 */
+  function defaultTimePlans() {
+    return { default: defaultTimePlan() };
+  }
+
   function defaultState(withSeed) {
     return {
       version: VERSION,
       settings: defaultSettings(),
       targets: defaultTargets(),
       timePlan: defaultTimePlan(),
+      timePlans: defaultTimePlans(),
       records: withSeed === false ? [] : clone(KG.Seed.records),
       templates: [clone(M.DEFAULT_TEMPLATE)],
       currentTemplateId: 'default',
@@ -74,6 +81,16 @@ var KG = window.KG || (window.KG = {});
     });
     // 标准用时：缺失的模块/子模块用默认值补齐，已有的值原样保留（用户可自行修改）
     state.timePlan = M.normalizeTimePlan(state.timePlan);
+    // v3 起：标准用时按模版独立。把旧 timePlan 迁到 timePlans.default；其它模版首次见到时按各自模版补默认
+    if (!state.timePlans || typeof state.timePlans !== 'object') state.timePlans = {};
+    if (state.timePlan && !state.timePlans.default) state.timePlans.default = state.timePlan;
+    state.templates.forEach(function (tpl) {
+      if (!state.timePlans[tpl.id]) {
+        state.timePlans[tpl.id] = M.normalizeTimePlan(null, tpl);
+      } else {
+        state.timePlans[tpl.id] = M.normalizeTimePlan(state.timePlans[tpl.id], tpl);
+      }
+    });
     if (!Array.isArray(state.records)) state.records = [];
     // 番茄钟设置
     state.settings.pomo = M.normalizePomo(state.settings.pomo);
@@ -139,6 +156,14 @@ var KG = window.KG || (window.KG = {});
       }
       state.version = 2;
       v = 2;
+    }
+
+    if (v < 3) {
+      // v2 -> v3：标准用时按模版独立。原 state.timePlan 整体迁到 timePlans.default；
+      // 其它模版在 fillDefaults 里按各自 modules 补默认（不在此处猜结构）
+      state.timePlans = { default: state.timePlan || M.normalizeTimePlan(null) };
+      state.version = 3;
+      v = 3;
     }
 
     state.version = VERSION;

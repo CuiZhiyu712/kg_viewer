@@ -240,6 +240,18 @@
 
     <div class="card">
       <div class="card-head">
+        <h2 class="card-title">趋势分析</h2>
+        <div class="card-head-actions">
+          <label class="field field-inline">
+            <span class="field-label">模版</span>
+            <select class="input" id="trend-template" title="全部 = 跨模版按模块 key 合并；选具体模版只看该模版的模块趋势"></select>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <h2 class="card-title">击败比与分数变化趋势</h2>
       </div>
       <div class="card-body">
@@ -280,6 +292,10 @@
       <div class="card-head">
         <h2 class="card-title">总用时达成率</h2>
         <div class="card-head-actions">
+          <label class="field field-inline">
+            <span class="field-label">模版</span>
+            <select class="input" id="time-template" title="选择要分析哪个模版的用时"></select>
+          </label>
           <label class="field field-inline">
             <span class="field-label">对比套卷</span>
             <select class="input" id="time-focus" title="选择要分析的套卷；默认跟随最近一次"></select>
