@@ -263,7 +263,7 @@ function planOf(state) { return state.timePlan; }
   sel.dispatchEvent(new win.Event('change', { bubbles: true }));
   await wait(200);
   eq(readRow('政治理论').latest, '11', '已锁定第一套');
-  const rowOld = $$('#records-table tbody tr').find((tr) => tr.children[1].textContent.trim() === '第29季');
+  const rowOld = $$('#records-table-default tbody tr').find((tr) => tr.children[1].textContent.trim() === '第29季');
   rowOld.querySelector('[data-act="delete"]').click();
   await wait(250);
   $('#modal-root [data-act="ok"]').click();

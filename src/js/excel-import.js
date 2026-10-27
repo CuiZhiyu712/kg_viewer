@@ -119,6 +119,7 @@ var KG = window.KG || (window.KG = {});
 
     var rec = {
       id: U.uuid(),
+      templateId: 'default',     // Sheet1 导入的记录一律绑默认模版（与列结构一一对应）
       date: dateStr,
       paperName: paperName,
       score: U.toNumber(cellRaw(sheet, C.score, dataRow)),
@@ -169,7 +170,7 @@ var KG = window.KG || (window.KG = {});
     });
 
     rec.raw = snapshotRaw(sheet, block);
-    return M.normalizeRecord(rec);
+    return M.normalizeRecord(rec, M.DEFAULT_TEMPLATE);
   }
 
   /** 逐格快照该数据块的原始值（日期列除外，导出时由 date 字段重新生成） */

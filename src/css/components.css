@@ -89,6 +89,46 @@
 }
 .empty-state[hidden] { display: none; }
 
+/* ---------------- 按模版分多张表 ---------------- */
+
+.records-by-template {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.table-block { display: flex; flex-direction: column; gap: 8px; }
+.table-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 0 2px;
+}
+.table-block-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.table-block-head .hint { color: var(--text-muted); font-size: 12px; }
+
+/* 模版编辑器 */
+.cb-line { display: inline-flex; align-items: center; gap: 6px; }
+.tpl-add-lib {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+}
+.tpl-add-lib summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--primary);
+}
+.tpl-add-lib .form-row { margin-top: 8px; }
+.template-select-row { margin-bottom: 12px; }
+
 /* ---------------- 弹窗 ---------------- */
 
 .modal-root { position: relative; z-index: 2000; }

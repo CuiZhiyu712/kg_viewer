@@ -8,7 +8,7 @@ var KG = window.KG || (window.KG = {});
   var M = KG.Model;
 
   var KEY = 'kaogong_dashboard';
-  var VERSION = 1;
+  var VERSION = 2;
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -32,6 +32,9 @@ var KG = window.KG || (window.KG = {});
       targets: defaultTargets(),
       timePlan: defaultTimePlan(),
       records: withSeed === false ? [] : clone(KG.Seed.records),
+      templates: [clone(M.DEFAULT_TEMPLATE)],
+      currentTemplateId: 'default',
+      moduleLibrary: clone(M.MODULE_LIBRARY),
       plans: [],          // 计划实例（含循环展开出来的每一天）
       planRules: [],      // 循环规则
       sessions: [],       // 学习计时记录
@@ -91,6 +94,25 @@ var KG = window.KG || (window.KG = {});
       r.kind = r.kind === 'week' ? 'week' : 'day';
       r.contentMode = r.contentMode === 'list' ? 'list' : 'text';
     });
+    // 套卷模版：v2 起新增字段，旧数据补齐
+    if (!Array.isArray(state.templates) || !state.templates.length) {
+      state.templates = [clone(M.DEFAULT_TEMPLATE)];
+    } else {
+      state.templates = state.templates.map(function (t) { return M.normalizeTemplate(t); });
+      // 保证默认模版始终存在且唯一
+      var hasDefault = state.templates.some(function (t) { return t.id === 'default'; });
+      if (!hasDefault) state.templates.unshift(clone(M.DEFAULT_TEMPLATE));
+    }
+    if (!state.currentTemplateId || !state.templates.some(function (t) { return t.id === state.currentTemplateId; })) {
+      state.currentTemplateId = 'default';
+    }
+    if (!Array.isArray(state.moduleLibrary)) state.moduleLibrary = clone(M.MODULE_LIBRARY);
+    // 给已有 records 补 templateId（旧数据缺失视为默认模版）
+    if (Array.isArray(state.records)) {
+      state.records.forEach(function (r) {
+        if (!r.templateId) r.templateId = 'default';
+      });
+    }
     return state;
   }
 
@@ -107,6 +129,18 @@ var KG = window.KG || (window.KG = {});
       v = 1;
     }
 
+    if (v < 2) {
+      // v1 -> v2：套卷模版字段
+      if (!Array.isArray(state.templates)) state.templates = [clone(M.DEFAULT_TEMPLATE)];
+      if (!state.currentTemplateId) state.currentTemplateId = 'default';
+      if (!Array.isArray(state.moduleLibrary)) state.moduleLibrary = clone(M.MODULE_LIBRARY);
+      if (Array.isArray(state.records)) {
+        state.records.forEach(function (r) { if (!r.templateId) r.templateId = 'default'; });
+      }
+      state.version = 2;
+      v = 2;
+    }
+
     state.version = VERSION;
     return fillDefaults(state);
   }
@@ -120,7 +154,10 @@ var KG = window.KG || (window.KG = {});
     try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
     if (!parsed) return defaultState(true);
     var state = migrate(parsed);
-    state.records.forEach(function (rec) { M.normalizeRecord(rec); });
+    state.records.forEach(function (rec) {
+      var tpl = M.findTemplate(state.templates, rec.templateId);
+      M.normalizeRecord(rec, tpl);
+    });
     return state;
   }
 

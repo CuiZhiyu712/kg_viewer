@@ -142,7 +142,7 @@ function cdp(ws) {
       safeAreaInCss: css.indexOf('safe-area-inset-top') >= 0,
       overscrollInCss: css.indexOf('overscroll-behavior') >= 0,
       viewport: vp ? vp.getAttribute('content') : '',
-      rows: document.querySelectorAll('#records-table tbody tr').length,
+      rows: document.querySelectorAll('#records-table-default tbody tr').length,
       tabs: document.querySelectorAll('#tabs .tab').length,
       csvDisabled: document.getElementById('btn-export-csv').disabled
     };

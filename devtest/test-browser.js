@@ -130,7 +130,7 @@ function cdp(ws) {
       storedKey: !!localStorage.getItem('kaogong_dashboard'),
       bannerVisible: !document.getElementById('lib-banner').hidden,
       bannerText: document.getElementById('lib-banner').textContent.trim(),
-      rowCount: document.querySelectorAll('#records-table tbody tr').length,
+      rowCount: document.querySelectorAll('#records-table-default tbody tr').length,
       statCards: document.querySelectorAll('#overview-cards .stat-card').length,
       statsRows: document.querySelectorAll('#stats-table tbody tr').length,
       canvases: document.querySelectorAll('canvas').length
@@ -140,14 +140,14 @@ function cdp(ws) {
 
   console.log('=== 主表状态着色核查 ===');
   const tint = await evaluate(`(() => {
-    const heads = [...document.querySelectorAll('#records-table thead th')].map(t => t.textContent.trim());
-    const tds = [...document.querySelectorAll('#records-table tbody tr td')];
+    const heads = [...document.querySelectorAll('#records-table-default thead th')].map(t => t.textContent.trim());
+    const tds = [...document.querySelectorAll('#records-table-default tbody tr td')];
     const out = [];
-    document.querySelectorAll('#records-table tbody tr td .pct').forEach(el => {
+    document.querySelectorAll('#records-table-default tbody tr td .pct').forEach(el => {
       const td = el.closest('td');
       out.push(td.previousElementSibling ? td.previousElementSibling.textContent.trim() : '?');
     });
-    const cells = [...document.querySelectorAll('#records-table tbody tr td .pct')].map(el => {
+    const cells = [...document.querySelectorAll('#records-table-default tbody tr td .pct')].map(el => {
       const td = el.closest('td');
       const idx = [...td.parentNode.children].indexOf(td);
       return { col: heads[idx] || ('col' + idx), text: el.textContent.trim(), cls: el.className };
@@ -184,15 +184,15 @@ function cdp(ws) {
   await sleep(3000);
   console.log('  临时记录数:', injected);
   const measureSubPop = async (key) => evaluate(`(() => {
-    document.querySelector('#records-table thead button[data-act="sub-col"][data-key="${key}"]').click();
-    const scroll = document.querySelector('#records-table').closest('.table-scroll');
+    document.querySelector('#records-table-default thead button[data-act="sub-col"][data-key="${key}"]').click();
+    const scroll = document.querySelector('#records-table-default').closest('.table-scroll');
     const pop = scroll.querySelector('.sub-pop');
     if (!pop) return { ok: false, why: '未出现小窗' };
     pop.scrollIntoView({ block: 'center' });   // 让小窗整体进入视口，elementFromPoint 才有效
-    const th = document.querySelector('#records-table thead th[data-col="${key}"]');
-    const mainHead = document.querySelector('#records-table thead');
+    const th = document.querySelector('#records-table-default thead th[data-col="${key}"]');
+    const mainHead = document.querySelector('#records-table-default thead');
     const popHead = pop.querySelector('thead');
-    const mainRows = [...document.querySelectorAll('#records-table tbody tr')];
+    const mainRows = [...document.querySelectorAll('#records-table-default tbody tr')];
     const popRows = [...pop.querySelectorAll('tbody tr')];
     const r1 = (el) => { const r = el.getBoundingClientRect(); return { t: Math.round(r.top * 100) / 100, b: Math.round(r.bottom * 100) / 100, l: Math.round(r.left * 100) / 100, r: Math.round(r.right * 100) / 100, h: Math.round(r.height * 10) / 10 }; };
     const pr = pop.getBoundingClientRect();
@@ -229,12 +229,12 @@ function cdp(ws) {
   console.log('  => 判断推理（4 列 × 3 行）同样逐行对齐: ' + (reaOK ? '成立' : '不成立'));
   await shot('1c-subpop-reasoning-1920.png', 1920, 1080);
   await measureSubPop('reasoning');
-  const closed = await evaluate(`!document.querySelector('#records-table').closest('.table-scroll').querySelector('.sub-pop')`);
+  const closed = await evaluate(`!document.querySelector('#records-table-default').closest('.table-scroll').querySelector('.sub-pop')`);
   console.log('  => 再次点击表头后小窗关闭: ' + (closed ? '成立' : '不成立'));
   await evaluate(`localStorage.setItem('kaogong_dashboard', ${JSON.stringify(origPayload)})`);
   await client.send('Page.reload', {});
   await sleep(3000);
-  console.log('  已恢复原始数据:', await evaluate(`document.querySelectorAll('#records-table tbody tr').length`) + ' 条');
+  console.log('  已恢复原始数据:', await evaluate(`document.querySelectorAll('#records-table-default tbody tr').length`) + ' 条');
 
   console.log('=== 截图 ===');
   await shot('1-records-1920.png', 1920, 1080);
@@ -431,8 +431,8 @@ function cdp(ws) {
   await client.send('Page.reload', {});
   await sleep(4500);
   const after = await evaluate(`({
-    rowCount: document.querySelectorAll('#records-table tbody tr').length,
-    paper: document.querySelector('#records-table tbody tr td:nth-child(2)') ? document.querySelector('#records-table tbody tr td:nth-child(2)').textContent : '',
+    rowCount: document.querySelectorAll('#records-table-default tbody tr').length,
+    paper: document.querySelector('#records-table-default tbody tr td:nth-child(2)') ? document.querySelector('#records-table-default tbody tr td:nth-child(2)').textContent : '',
     toastVisible: !!document.querySelector('.toast')
   })`);
   console.log('  刷新后:', JSON.stringify(after));

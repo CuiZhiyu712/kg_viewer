@@ -118,7 +118,7 @@ const ok = (c, label) => eq(!!c, true, label);
   const measure = () => ev(`(() => {
     const hdr = document.querySelector('.app-header');
     const tabs = document.getElementById('tabs');
-    const ts = document.querySelector('#records-table').closest('.table-scroll');
+    const ts = document.querySelector('#records-table-default').closest('.table-scroll');
     const btns = [...document.querySelectorAll('.toolbar .btn, .tab')];
     const sizes = btns.map(b => b.getBoundingClientRect().height).filter(Boolean);
     return {
@@ -132,7 +132,7 @@ const ok = (c, label) => eq(!!c, true, label);
       tabsH: Math.round(tabs.getBoundingClientRect().height),
       headerVar: getComputedStyle(document.documentElement).getPropertyValue('--header-h').trim(),
       tableScrollClipped: ts ? ts.scrollWidth - ts.clientWidth : null,
-      tableRows: document.querySelectorAll('#records-table tbody tr').length,
+      tableRows: document.querySelectorAll('#records-table-default tbody tr').length,
       minTapH: sizes.length ? Math.round(Math.min(...sizes)) : null,
       bodyFont: getComputedStyle(document.body).fontSize,
       modalMaxW: getComputedStyle(document.querySelector('#modal-root .modal') || document.body).maxWidth

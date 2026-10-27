@@ -111,7 +111,7 @@ async function browserCheck(htmlPath) {
   };
 
   const st = await ev(`(() => ({
-    rowCount: document.querySelectorAll('#records-table tbody tr').length,
+    rowCount: document.querySelectorAll('#records-table-default tbody tr').length,
     statCards: document.querySelectorAll('#overview-cards .stat-card').length,
     tabs: document.querySelectorAll('#tabs .tab').length,
     xlsx: !!window.XLSX, echarts: !!window.echarts,
@@ -138,7 +138,7 @@ async function browserCheck(htmlPath) {
   await sleep(800);
   const after = await ev(`(() => {
     const s = JSON.parse(localStorage.getItem('kaogong_dashboard'));
-    return { rows: document.querySelectorAll('#records-table tbody tr').length,
+    return { rows: document.querySelectorAll('#records-table-default tbody tr').length,
              stored: s ? s.records.length : -1 };
   })()`);
   await ev(`document.querySelector('[data-tab="trend"]').click()`);

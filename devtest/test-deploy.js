@@ -155,7 +155,7 @@ const ok = (c, label) => eq(!!c, true, label);
     localStorageOK: (() => { try { localStorage.setItem('__p','1'); localStorage.removeItem('__p'); return true; } catch(e){ return false; } })(),
     xlsx: !!window.XLSX,
     echarts: !!window.echarts,
-    rowCount: document.querySelectorAll('#records-table tbody tr').length,
+    rowCount: document.querySelectorAll('#records-table-default tbody tr').length,
     statCards: document.querySelectorAll('#overview-cards .stat-card').length,
     storageStatus: document.getElementById('storage-status').textContent.trim(),
     bindDisabled: document.getElementById('btn-fs-bind').disabled,

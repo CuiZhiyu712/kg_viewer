@@ -36,6 +36,34 @@ var KG = window.KG || (window.KG = {});
     ]
   };
 
+  /* 模块库：模版从这里勾选模块；用户也可新增库条目（state.moduleLibrary 持久化追加）。
+     库条目的 key 与 SUBMODULES 的 key 一致时，子模块定义复用 SUBMODULES；
+     用户新增的库条目（key 由 uuid 生成）走自定义子模块路径。 */
+  var MODULE_LIBRARY = [
+    { key: 'political',    name: '政治理论', subModules: null },
+    { key: 'common',       name: '常识',     subModules: null },
+    { key: 'language',     name: '言语理解', subModules: SUBMODULES.language.slice() },
+    { key: 'quantity',     name: '数量关系', subModules: null },
+    { key: 'reasoning',    name: '判断推理', subModules: SUBMODULES.reasoning.slice() },
+    { key: 'dataAnalysis', name: '资料分析', subModules: null }
+  ];
+
+  /* 默认模版：镜像现有 6 模块结构，保持默认模版下行为与历史完全一致 */
+  function cloneDeep(o) { return JSON.parse(JSON.stringify(o)); }
+  function buildDefaultTemplate() {
+    return {
+      id: 'default',
+      name: '默认模版',
+      isDefault: true,
+      modules: MODULES.map(function (def) {
+        var subs = SUBMODULES[def.key] ? SUBMODULES[def.key].slice() : null;
+        return { key: def.key, name: def.name, hasSub: !!subs, subModules: subs };
+      }),
+      targets: cloneDeep(DEFAULT_TARGETS)
+    };
+  }
+  var DEFAULT_TEMPLATE;    // 在 DEFAULT_TARGETS 定义之后再赋值
+
   /* ---------------- Sheet1 列位（A1 记法） ---------------- */
   var SHEET_COLS = {
     date: 'A', paperName: 'B', score: 'C', averageScore: 'D', defeatRate: 'E',
@@ -74,6 +102,9 @@ var KG = window.KG || (window.KG = {});
     reasoning:    { target: 90,  warning: 80 },
     dataAnalysis: { target: 100, warning: 90 }
   };
+
+  // DEFAULT_TARGETS 已定义，可以构建默认模版了
+  DEFAULT_TEMPLATE = buildDefaultTemplate();
 
   var DEFAULT_SETTINGS = {
     defeatTarget: 95,
@@ -151,20 +182,24 @@ var KG = window.KG || (window.KG = {});
     return { questions: null, correct: null, time: null };
   }
 
-  function emptyModule(key) {
-    var def = null;
-    for (var i = 0; i < MODULES.length; i++) if (MODULES[i].key === key) def = MODULES[i];
+  function emptyModule(key, modDef) {
+    /* modDef 可选：来自模版的 {key,name,hasSub,subModules}；缺失时按默认 6 模块查找 */
+    var def = modDef;
+    if (!def) {
+      for (var i = 0; i < MODULES.length; i++) if (MODULES[i].key === key) def = MODULES[i];
+    }
+    var subs = modDef && modDef.hasSub ? (modDef.subModules || []) : SUBMODULES[key];
     var m = {
-      name: def ? def.name : key,
+      name: def ? def.name : (modDef ? modDef.name : key),
       questions: null,
       correct: null,
       accuracy: null,     // 自动计算：正确题数 / 总题数
       avgAccuracy: null,  // 用户填写（对应 Excel「平均正确率」行），允许「无」= null
       time: null
     };
-    if (SUBMODULES[key]) {
+    if (subs) {
       m.subModules = {};
-      SUBMODULES[key].forEach(function (s) {
+      subs.forEach(function (s) {
         m.subModules[s.key] = {
           name: s.name, questions: null, correct: null,
           accuracy: null, avgAccuracy: null, time: null
@@ -174,10 +209,12 @@ var KG = window.KG || (window.KG = {});
     return m;
   }
 
-  /** 新建一条空白记录（表单用） */
-  function blankRecord() {
+  /** 新建一条空白记录（按模版生成模块槽，缺省走默认模版） */
+  function blankRecord(template) {
+    var t = template || DEFAULT_TEMPLATE;
     var rec = {
       id: U.uuid(),
+      templateId: t.id || 'default',
       date: U.today(),
       paperName: '',
       score: null,
@@ -188,7 +225,9 @@ var KG = window.KG || (window.KG = {});
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    MODULES.forEach(function (def) { rec.modules[def.key] = emptyModule(def.key); });
+    (t.modules || []).forEach(function (mod) {
+      rec.modules[mod.key] = emptyModule(mod.key, mod);
+    });
     return rec;
   }
 
@@ -440,25 +479,35 @@ var KG = window.KG || (window.KG = {});
    * 重新计算一条记录的所有派生字段（正确率、分组总计、整套卷汇总）。
    * 保证 accuracy 永远能从 questions / correct 复算出来，不会出现 NaN / Infinity。
    * 注意：不改写 record.total（导入数据以 Excel「合计」列为准），仅计算 computedTotal。
+   *
+   * template 可选：传模版时按模版的 modules 列表规整（自定义模版专属模块会被补齐）；
+   * 不传时按默认 6 模块规整（默认模版 records 与历史导入数据的行为不变）。
    */
-  function normalizeRecord(rec) {
+  function normalizeRecord(rec, template) {
     if (!rec || typeof rec !== 'object') return rec;
     rec.modules = rec.modules || {};
+    rec.templateId = rec.templateId || 'default';
     rec.date = U.toDateString(rec.date);
     rec.score = U.toNumber(rec.score);
     rec.averageScore = U.toNumber(rec.averageScore);
     rec.defeatRate = U.toPercent(rec.defeatRate);
 
-    MODULES.forEach(function (def) {
-      var key = def.key;
-      var m = rec.modules[key] || emptyModule(key);
-      m.name = def.name;
+    var t = template || (rec.templateId === 'default' ? null : null);
+    // 没传模版时按默认 6 模块走（保持向后兼容；自定义模版记录里的非默认模块会被原样保留）
+    var moduleList = t ? t.modules : MODULES.map(function (def) {
+      return { key: def.key, name: def.name, hasSub: !!SUBMODULES[def.key], subModules: SUBMODULES[def.key] };
+    });
+
+    moduleList.forEach(function (mod) {
+      var key = mod.key;
+      var m = rec.modules[key] || emptyModule(key, mod);
+      m.name = mod.name;
       m.questions = U.toCount(m.questions);
       m.correct = U.toCount(m.correct);
       m.time = U.toNumber(m.time);
       m.avgAccuracy = U.toPercent(m.avgAccuracy);
 
-      var subs = SUBMODULES[key];
+      var subs = mod.hasSub ? (mod.subModules || []) : null;
       if (subs) {
         m.subModules = m.subModules || {};
         var anySubQuestions = false;
@@ -473,7 +522,6 @@ var KG = window.KG || (window.KG = {});
           if (sm.questions !== null && sm.questions > 0) anySubQuestions = true;
           m.subModules[s.key] = sm;
         });
-        // 子模块有数据时以子模块汇总为准；否则沿用已存的分组值
         if (anySubQuestions) {
           var sumQ = 0, sumC = 0, sumT = 0, hasC = false, hasT = false;
           subs.forEach(function (s) {
@@ -486,6 +534,9 @@ var KG = window.KG || (window.KG = {});
           if (hasC) m.correct = U.round(sumC, 2);
           if (hasT) m.time = U.round(sumT, 2);
         }
+      } else {
+        // 模版未启用子模块时，丢弃残留的 subModules 字段
+        delete m.subModules;
       }
 
       m.accuracy = U.calcAccuracy(m.questions, m.correct);
@@ -494,27 +545,28 @@ var KG = window.KG || (window.KG = {});
 
     rec.computedTotal = sumModules(rec);
 
-    // 整套卷汇总：优先沿用导入值，缺失部分用模块汇总补齐
-    var t = rec.total || {};
-    t.questions = t.questions !== null && t.questions !== undefined ? U.toCount(t.questions) : rec.computedTotal.questions;
-    t.correct = t.correct !== null && t.correct !== undefined ? U.toCount(t.correct) : rec.computedTotal.correct;
-    t.time = t.time !== null && t.time !== undefined ? U.toNumber(t.time) : rec.computedTotal.time;
-    t.accuracy = U.calcAccuracy(t.questions, t.correct);
-    rec.total = t;
+    var tt = rec.total || {};
+    tt.questions = tt.questions !== null && tt.questions !== undefined ? U.toCount(tt.questions) : rec.computedTotal.questions;
+    tt.correct = tt.correct !== null && tt.correct !== undefined ? U.toCount(tt.correct) : rec.computedTotal.correct;
+    tt.time = tt.time !== null && tt.time !== undefined ? U.toNumber(tt.time) : rec.computedTotal.time;
+    tt.accuracy = U.calcAccuracy(tt.questions, tt.correct);
+    rec.total = tt;
 
     return rec;
   }
 
-  /** 六大模块汇总（用于校验导入数据的「合计」是否自洽） */
+  /** 模块汇总（用于校验导入数据的「合计」是否自洽；按记录实际拥有的模块求和） */
   function sumModules(rec) {
     var q = 0, c = 0, t = 0, hasQ = false, hasC = false, hasT = false;
-    MODULES.forEach(function (def) {
-      var m = rec.modules[def.key];
-      if (!m) return;
-      if (m.questions !== null) { q += m.questions; hasQ = true; }
-      if (m.correct !== null) { c += m.correct; hasC = true; }
-      if (m.time !== null) { t += m.time; hasT = true; }
-    });
+    if (rec && rec.modules) {
+      Object.keys(rec.modules).forEach(function (key) {
+        var m = rec.modules[key];
+        if (!m) return;
+        if (m.questions !== null) { q += m.questions; hasQ = true; }
+        if (m.correct !== null) { c += m.correct; hasC = true; }
+        if (m.time !== null) { t += m.time; hasT = true; }
+      });
+    }
     var out = { questions: hasQ ? U.round(q, 2) : null, correct: hasC ? U.round(c, 2) : null, time: hasT ? U.round(t, 2) : null };
     out.accuracy = U.calcAccuracy(out.questions, out.correct);
     return out;
@@ -591,9 +643,55 @@ var KG = window.KG || (window.KG = {});
     return null;
   }
 
+  /* ---------------- 模版 ---------------- */
+
+  /** 在模版列表里按 id 查找；找不到时返回默认模版 */
+  function findTemplate(templates, id) {
+    if (!Array.isArray(templates)) return DEFAULT_TEMPLATE;
+    for (var i = 0; i < templates.length; i++) {
+      if (templates[i].id === id) return templates[i];
+    }
+    return DEFAULT_TEMPLATE;
+  }
+
+  /** 规整模版字段，确保 modules / targets 结构合法 */
+  function normalizeTemplate(t) {
+    if (!t || typeof t !== 'object') return cloneDeep(DEFAULT_TEMPLATE);
+    if (!t.id) t.id = U.uuid();
+    if (!t.name) t.name = '未命名模版';
+    t.isDefault = !!t.isDefault;
+    var modules = Array.isArray(t.modules) ? t.modules : [];
+    t.modules = modules.map(function (mod) {
+      var subs = mod.hasSub && Array.isArray(mod.subModules) ? mod.subModules.slice() : null;
+      return {
+        key: mod.key || U.uuid(),
+        name: String(mod.name || '模块'),
+        hasSub: !!mod.hasSub,
+        subModules: subs ? subs.map(function (s) {
+          return { key: s.key || U.uuid(), name: String(s.name || '子模块') };
+        }) : null
+      };
+    });
+    t.targets = t.targets || {};
+    return t;
+  }
+
+  /** 新建一个空白自定义模版 */
+  function blankTemplate() {
+    return {
+      id: U.uuid(),
+      name: '新模版',
+      isDefault: false,
+      modules: [],
+      targets: cloneDeep(DEFAULT_TARGETS)
+    };
+  }
+
   KG.Model = {
     MODULES: MODULES,
     SUBMODULES: SUBMODULES,
+    MODULE_LIBRARY: MODULE_LIBRARY,
+    DEFAULT_TEMPLATE: DEFAULT_TEMPLATE,
     SHEET_COLS: SHEET_COLS,
     MODULE_COL: MODULE_COL,
     GROUP_TOTAL_COL: GROUP_TOTAL_COL,
@@ -615,6 +713,9 @@ var KG = window.KG || (window.KG = {});
     moduleAccuracy: moduleAccuracy,
     moduleAccuracies: moduleAccuracies,
     moduleAvgAccuracy: moduleAvgAccuracy,
+    findTemplate: findTemplate,
+    normalizeTemplate: normalizeTemplate,
+    blankTemplate: blankTemplate,
     WEEKDAY_NAMES: WEEKDAY_NAMES,
     PLAN_KINDS: PLAN_KINDS,
     dayOfWeek: dayOfWeek,

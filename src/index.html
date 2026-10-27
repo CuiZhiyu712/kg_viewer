@@ -64,7 +64,8 @@
       <button type="button" class="btn btn-primary" id="btn-add">+ 新增一套套卷记录</button>
       <button type="button" class="btn" id="btn-import">导入 XLSX</button>
       <button type="button" class="btn" id="btn-export">导出 XLSX</button>
-      <button type="button" class="btn" id="btn-export-csv" title="导出「一行 = 一套卷」的平表 CSV，可直接导入飞书多维表格或 Excel">导出 CSV</button>
+      <button type="button" class="btn" id="btn-export-custom" title="把自定义套卷模版下的记录导出成多 sheet xlsx（每个模版一个 sheet）">导出自定义模版</button>
+      <button type="button" class="btn" id="btn-export-csv" title="导出「一行 = 一套卷」的平表 CSV（仅默认模版），可直接导入飞书多维表格或 Excel">导出 CSV</button>
       <button type="button" class="btn" id="btn-backup">数据备份</button>
       <button type="button" class="btn" id="btn-restore">数据恢复</button>
       <button type="button" class="btn btn-danger" id="btn-clear">清空记录</button>
@@ -162,6 +163,7 @@
         <h2 class="card-title">套卷列表</h2>
         <div class="card-head-actions">
           <span class="hint" id="records-count"></span>
+          <button type="button" class="btn btn-ghost" id="btn-manage-templates">管理套卷模版</button>
         </div>
       </div>
       <div class="card-body">
@@ -192,12 +194,7 @@
             <button type="button" class="btn btn-ghost" id="btn-filter-reset">重置</button>
           </div>
         </div>
-        <div class="table-scroll">
-          <table class="data-table" id="records-table">
-            <thead></thead>
-            <tbody></tbody>
-          </table>
-        </div>
+        <div class="records-by-template" id="records-by-template"></div>
         <div class="empty-state" id="records-empty" hidden></div>
       </div>
     </div>
