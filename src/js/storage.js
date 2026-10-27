@@ -8,7 +8,7 @@ var KG = window.KG || (window.KG = {});
   var M = KG.Model;
 
   var KEY = 'kaogong_dashboard';
-  var VERSION = 3;
+  var VERSION = 4;
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -36,6 +36,7 @@ var KG = window.KG || (window.KG = {});
       version: VERSION,
       settings: defaultSettings(),
       targets: defaultTargets(),
+      targetsByTemplate: { default: defaultTargets() },
       timePlan: defaultTimePlan(),
       timePlans: defaultTimePlans(),
       records: withSeed === false ? [] : clone(KG.Seed.records),
@@ -78,6 +79,17 @@ var KG = window.KG || (window.KG = {});
         target: U.toNumber(t.target) === null ? d.targets[key].target : U.toNumber(t.target),
         warning: U.toNumber(t.warning) === null ? d.targets[key].warning : U.toNumber(t.warning)
       };
+    });
+    // 阶段目标按模版独立：v4 起新增字段 targetsByTemplate；旧数据补齐
+    if (!state.targetsByTemplate || typeof state.targetsByTemplate !== 'object') {
+      state.targetsByTemplate = { default: state.targets || defaultTargets() };
+    } else if (!state.targetsByTemplate.default) {
+      state.targetsByTemplate.default = state.targets || defaultTargets();
+    }
+    state.templates.forEach(function (tpl) {
+      if (!state.targetsByTemplate[tpl.id]) {
+        state.targetsByTemplate[tpl.id] = clone(M.DEFAULT_TARGETS);
+      }
     });
     // 标准用时：缺失的模块/子模块用默认值补齐，已有的值原样保留（用户可自行修改）
     state.timePlan = M.normalizeTimePlan(state.timePlan);
@@ -164,6 +176,14 @@ var KG = window.KG || (window.KG = {});
       state.timePlans = { default: state.timePlan || M.normalizeTimePlan(null) };
       state.version = 3;
       v = 3;
+    }
+
+    if (v < 4) {
+      // v3 -> v4：阶段目标按模版独立。原 state.targets 整体迁到 targetsByTemplate.default；
+      // 其它模版在 fillDefaults 里按各自 modules 补默认
+      state.targetsByTemplate = { default: state.targets || M.DEFAULT_TARGETS };
+      state.version = 4;
+      v = 4;
     }
 
     state.version = VERSION;
