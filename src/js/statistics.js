@@ -83,11 +83,12 @@ var KG = window.KG || (window.KG = {});
    * 最高正确率 —— 所有套卷中的最大值
    * 记录平均正确率 —— 最新记录中用户填写的「平均正确率」（可为 null）
    */
-  function moduleStats(records, targets) {
+  function moduleStats(records, targets, template) {
     var s = sortedAsc(records);
     var cur = s.length ? s[s.length - 1] : null;
+    var tmods = template && template.modules ? template.modules : M.MODULES;
 
-    return M.MODULES.map(function (def) {
+    return tmods.map(function (def) {
       var key = def.key;
       var accs = s.map(function (r) { return M.moduleAccuracy(r, key); })
                    .filter(function (v) { return v !== null; });

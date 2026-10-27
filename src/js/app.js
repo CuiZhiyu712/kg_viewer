@@ -14,6 +14,7 @@ var KG = window.KG || (window.KG = {});
     version: Store.VERSION,
     settings: Store.defaultSettings(),
     targets: Store.defaultTargets(),
+    targetsByTemplate: { default: Store.defaultTargets() },
     timePlan: Store.defaultTimePlan(),
     timePlans: { default: Store.defaultTimePlan() },
     records: [],
@@ -24,6 +25,7 @@ var KG = window.KG || (window.KG = {});
     activeTab: 'records',
     timeFocusId: '',   // 用时分析里选中的套卷；空字符串 = 跟随最近一次
     timeTemplateId: 'default',  // 用时分析里选中的模版
+    statsTemplateId: 'default', // 统计分析里选中的模版（无「全部」）
     trendTemplateId: 'all',     // 趋势分析里选中的模版（'all' = 跨模版合并）
     plans: [],
     planRules: [],
@@ -90,6 +92,7 @@ var KG = window.KG || (window.KG = {});
       version: payload.version,
       settings: payload.settings,
       targets: payload.targets,
+      targetsByTemplate: payload.targetsByTemplate,
       timePlan: payload.timePlan,
       timePlans: payload.timePlans,
       records: payload.records,
@@ -107,6 +110,7 @@ var KG = window.KG || (window.KG = {});
     });
     state.settings = merged.settings;
     state.targets = merged.targets;
+    state.targetsByTemplate = merged.targetsByTemplate || { default: merged.targets };
     state.timePlan = merged.timePlan;
     state.timePlans = merged.timePlans || { default: merged.timePlan };
     state.records = merged.records;
@@ -579,6 +583,7 @@ var KG = window.KG || (window.KG = {});
       exportedAt: new Date().toISOString(),
       settings: state.settings,
       targets: state.targets,
+      targetsByTemplate: state.targetsByTemplate,
       timePlan: state.timePlan,
       timePlans: state.timePlans,
       records: state.records,
@@ -625,6 +630,7 @@ var KG = window.KG || (window.KG = {});
           version: data.version,
           settings: data.settings,
           targets: data.targets,
+          targetsByTemplate: data.targetsByTemplate,
           timePlan: data.timePlan,
           timePlans: data.timePlans,
           records: data.records,
@@ -642,6 +648,7 @@ var KG = window.KG || (window.KG = {});
         });
         state.settings = merged.settings;
         state.targets = merged.targets;
+        state.targetsByTemplate = merged.targetsByTemplate || { default: merged.targets };
         state.timePlan = merged.timePlan;
         state.timePlans = merged.timePlans || { default: merged.timePlan };
         state.records = merged.records;
@@ -1024,12 +1031,26 @@ var KG = window.KG || (window.KG = {});
     document.getElementById('btn-clear').addEventListener('click', clearRecords);
     document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
     document.getElementById('btn-edit-targets').addEventListener('click', function () {
-      UI.openTargetsForm(state, function (targets) {
-        state.targets = targets;
+      var tpl = M.findTemplate(state.templates, state.statsTemplateId || 'default');
+      UI.openTargetsForm(state, tpl, function (tpl2, targets) {
+        state.targetsByTemplate = state.targetsByTemplate || {};
+        state.targetsByTemplate[tpl2.id] = targets;
+        // 默认模版的也同步到老的 state.targets 字段，兼容历史代码路径
+        if (tpl2.id === 'default') state.targets = targets;
         persist();
         renderAll();
-        UI.toast('阶段目标已保存', 'success');
+        UI.toast('「' + (tpl2.name || '默认模版') + '」阶段目标已保存', 'success');
       });
+    });
+    var statsTplSel = document.getElementById('stats-template');
+    if (statsTplSel) statsTplSel.addEventListener('change', function () {
+      state.statsTemplateId = this.value || 'default';
+      var filter = state.chartFilter;
+      var t = M.findTemplate(state.templates, state.statsTemplateId);
+      var mods = {};
+      (t.modules || []).forEach(function (m) { mods[m.key] = true; });
+      if (filter.statsModule !== 'all' && !mods[filter.statsModule]) filter.statsModule = 'all';
+      renderAll();
     });
     var btnTpl = document.getElementById('btn-manage-templates');
     if (btnTpl) btnTpl.addEventListener('click', function () {
@@ -1285,6 +1306,7 @@ var KG = window.KG || (window.KG = {});
     state.version = loaded.version;
     state.settings = loaded.settings;
     state.targets = loaded.targets;
+    state.targetsByTemplate = loaded.targetsByTemplate || { default: loaded.targets };
     state.timePlan = loaded.timePlan;
     state.timePlans = loaded.timePlans || { default: loaded.timePlan };
     state.records = loaded.records;

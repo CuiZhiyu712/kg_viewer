@@ -284,8 +284,9 @@ var KG = window.KG || (window.KG = {});
     function num(v, digits) { return v === null || v === undefined ? '—' : U.fmtNum(v, digits); }
 
     var bodyHtml = list.map(function (r) {
+      var tplTargets = (state.targetsByTemplate && state.targetsByTemplate[tpl.id]) || state.targets;
       var cells = (tpl.modules || []).map(function (mod) {
-        var t = (tpl.targets && tpl.targets[mod.key]) || state.targets[mod.key] || M.DEFAULT_TARGETS[mod.key];
+        var t = (tpl.targets && tpl.targets[mod.key]) || tplTargets[mod.key] || M.DEFAULT_TARGETS[mod.key];
         return '<td class="num">' + pctHtml(M.moduleAccuracy(r, mod.key), t && t.target, t && t.warning) + '</td>';
       }).join('');
       return '<tr data-id="' + esc(r.id) + '" data-template="' + esc(tpl.id) + '">' +
@@ -344,7 +345,10 @@ var KG = window.KG || (window.KG = {});
     var scroll = table.closest('.table-scroll');
     if (!scroll) return;
 
-    var target = (tpl.targets && tpl.targets[openSub.moduleKey]) || state.targets[openSub.moduleKey] || M.DEFAULT_TARGETS[openSub.moduleKey];
+    var target = (tpl.targets && tpl.targets[openSub.moduleKey]) ||
+                 ((state.targetsByTemplate && state.targetsByTemplate[tpl.id] && state.targetsByTemplate[tpl.id][openSub.moduleKey]) ||
+                   state.targets[openSub.moduleKey]) ||
+                 M.DEFAULT_TARGETS[openSub.moduleKey];
     var subs = mod.subModules || [];
     var headCells = subs.map(function (s) { return '<th class="num">' + esc(s.name) + '</th>'; }).join('');
     var rows = list.filter(function (r) { return (r.templateId || 'default') === tpl.id; }).map(function (r) {
@@ -410,12 +414,30 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 模块二：统计表 ==================== */
 
+  function renderStatsTemplateSelect(state, selectedId) {
+    var sel = document.getElementById('stats-template');
+    if (!sel) return;
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var opts = templates.map(function (t) {
+      return '<option value="' + esc(t.id) + '"' + (t.id === selectedId ? ' selected' : '') + '>' +
+        esc(t.name) + (t.isDefault ? '（默认）' : '') + '</option>';
+    }).join('');
+    sel.innerHTML = opts;
+  }
+
   function renderStatsTable(state) {
-    var defaultRecs = state.records.filter(function (r) { return !r.templateId || r.templateId === 'default'; });
-    var stats = S.moduleStats(defaultRecs, state.targets);
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var tplId = state.statsTemplateId;
+    if (!tplId || !templates.some(function (t) { return t.id === tplId; })) tplId = 'default';
+    var tpl = M.findTemplate(templates, tplId);
+    renderStatsTemplateSelect(state, tplId);
+
+    var recs = state.records.filter(function (r) { return (r.templateId || 'default') === tplId; });
+    var targets = (state.targetsByTemplate && state.targetsByTemplate[tplId]) || state.targets;
+    var stats = S.moduleStats(recs, targets, tpl);
     var table = document.getElementById('stats-table');
     var empty = document.getElementById('stats-empty');
-    var statsCount = defaultRecs.length;
+    var statsCount = recs.length;
 
     table.querySelector('thead').innerHTML =
       '<tr><th>模块</th><th class="num">题数</th><th class="num">最近一次</th>' +
@@ -423,12 +445,12 @@ var KG = window.KG || (window.KG = {});
       '<th class="num">阶段目标</th><th class="num">黄色下限</th><th class="center">状态</th></tr>';
 
     U.setHtml(document.getElementById('stats-hint'),
-      statsCount ? '基于 ' + statsCount + ' 套默认模版记录动态计算' : '');
+      statsCount ? '基于 ' + statsCount + ' 套「' + (tpl.name || '默认模版') + '」记录动态计算' : '');
 
     if (!statsCount) {
       table.querySelector('tbody').innerHTML = '';
       empty.hidden = false;
-      empty.innerHTML = '<p>暂无数据，先添加或导入套卷记录。</p>';
+      empty.innerHTML = '<p>该模版下暂无数据，先添加或导入套卷记录。</p>';
       return;
     }
     empty.hidden = true;
@@ -499,8 +521,10 @@ var KG = window.KG || (window.KG = {});
       return { key: d.key, label: d.name };
     })), state.chartFilter.time, function (k) { KG.App.setChartFilter('time', k); });
 
-    /* 统计表 / 用时分析仍按各自模版的 modules 列出（统计只服务默认模版，用时分析按选中模版） */
-    var statsMods = M.MODULES;
+    /* 统计表：按选中模版的 modules 列出（统计页也有模版下拉，无「全部」） */
+    var statsTplId = state.statsTemplateId || 'default';
+    var statsTpl = M.findTemplate(state.templates, statsTplId);
+    var statsMods = statsTpl.modules || M.MODULES;
     var statsModuleItems = [{ key: 'all', label: '全部' }].concat(statsMods.map(function (d) {
       return { key: d.key, label: d.name };
     }));
@@ -981,7 +1005,8 @@ var KG = window.KG || (window.KG = {});
       '</div>';
 
     var modulesHtml = (tpl.modules || []).map(function (mod) {
-      var t = (tpl.targets && tpl.targets[mod.key]) || state.targets[mod.key] || M.DEFAULT_TARGETS[mod.key];
+      var tplTargets = (state.targetsByTemplate && state.targetsByTemplate[tpl.id]) || state.targets;
+      var t = (tpl.targets && tpl.targets[mod.key]) || tplTargets[mod.key] || M.DEFAULT_TARGETS[mod.key];
       var def = { key: mod.key, name: mod.name };
       return detailModuleHtml(def, rec.modules[mod.key] || M.emptyModule(mod.key, mod), t, mod);
     }).join('');
@@ -1024,20 +1049,23 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 阶段目标编辑 ==================== */
 
-  function openTargetsForm(state, onSubmit) {
-    var rows = M.MODULES.map(function (def) {
-      var t = state.targets[def.key] || M.DEFAULT_TARGETS[def.key];
+  function openTargetsForm(state, template, onSubmit) {
+    var tpl = template || M.DEFAULT_TEMPLATE;
+    var existing = (state.targetsByTemplate && state.targetsByTemplate[tpl.id]) || state.targets;
+    var rows = (tpl.modules || M.MODULES).map(function (def) {
+      var t = existing[def.key] || M.DEFAULT_TARGETS[def.key] || { target: null, warning: null };
       return '<tr data-module="' + def.key + '">' +
         '<td class="sub-name">' + esc(def.name) + '</td>' +
-        '<td><input type="number" class="input input-sm" min="0" max="100" step="0.1" data-field="target" value="' + t.target + '"></td>' +
-        '<td><input type="number" class="input input-sm" min="0" max="100" step="0.1" data-field="warning" value="' + t.warning + '"></td>' +
+        '<td><input type="number" class="input input-sm" min="0" max="100" step="0.1" data-field="target" value="' + (t.target === null || t.target === undefined ? '' : t.target) + '"></td>' +
+        '<td><input type="number" class="input input-sm" min="0" max="100" step="0.1" data-field="warning" value="' + (t.warning === null || t.warning === undefined ? '' : t.warning) + '"></td>' +
       '</tr>';
     }).join('');
 
     openModal({
-      title: '编辑各模块阶段目标',
+      title: '编辑阶段目标 · ' + (tpl.name || '默认模版'),
       size: 'modal-md',
-      body: '<p class="modal-hint">阶段目标与黄色下限用于判定每个模块的状态：最近一次正确率 ≥ 阶段目标为达标；介于黄色下限与阶段目标之间为还需努力；低于黄色下限为未达标。</p>' +
+      body: '<p class="modal-hint">这里是「' + esc(tpl.name || '默认模版') + '」各模块的阶段目标与黄色下限：' +
+        '最近一次正确率 ≥ 阶段目标为达标；介于黄色下限与阶段目标之间为还需努力；低于黄色下限为未达标。</p>' +
         '<table class="form-table"><thead><tr><th>模块</th><th>阶段目标 %</th><th>黄色下限 %</th></tr></thead><tbody>' + rows + '</tbody></table>',
       footer:
         '<button type="button" class="btn" data-act="cancel">取消</button>' +
@@ -1047,7 +1075,7 @@ var KG = window.KG || (window.KG = {});
         a.root.querySelector('[data-act="save"]').addEventListener('click', function () {
           var targets = {};
           var bad = null;
-          M.MODULES.forEach(function (def) {
+          (tpl.modules || M.MODULES).forEach(function (def) {
             var tr = a.root.querySelector('tr[data-module="' + def.key + '"]');
             var t = U.toNumber(tr.querySelector('[data-field="target"]').value);
             var w = U.toNumber(tr.querySelector('[data-field="warning"]').value);
@@ -1057,7 +1085,7 @@ var KG = window.KG || (window.KG = {});
             targets[def.key] = { target: t, warning: w };
           });
           if (bad) { toast('「' + bad + '」的目标或下限需在 0~100 之间', 'error'); return; }
-          onSubmit(targets);
+          onSubmit(tpl, targets);
           a.close();
         });
       }
@@ -2600,6 +2628,7 @@ var KG = window.KG || (window.KG = {});
     placeSubPop: placeSubPop,
     filterRecords: filterRecords,
     renderStatsTable: renderStatsTable,
+    renderStatsTemplateSelect: renderStatsTemplateSelect,
     renderTimeAnalysis: renderTimeAnalysis,
     openTimePlanForm: openTimePlanForm,
     renderPlans: renderPlans,
