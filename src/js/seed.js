@@ -19,6 +19,7 @@ var KG = window.KG || (window.KG = {});
   var SEED_RECORDS = [
     {
       id: 'seed-0001-4f3a-9c21-8b7d6e5a4c3b',
+      templateId: 'default',
       date: '2026-09-19',
       paperName: '第29季',
       score: 58.5,

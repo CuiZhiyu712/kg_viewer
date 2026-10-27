@@ -141,7 +141,7 @@ const readFile = () => JSON.parse(fake.files.get('kaogong_data.json'));
   eq(fake.files.has('kaogong_data.json'), true, '目标文件已创建');
   const f1 = readFile();
   eq(f1.app, '考公练习追踪看板', '文件带应用标识');
-  eq(f1.version, 1, '文件带 version');
+  eq(f1.version, 2, '文件带 version=2');
   eq(f1.records.length, 1, '文件里有 1 条记录');
   eq(f1.records[0].paperName, '第29季', '记录内容正确');
   eq(f1.records[0].date, '2026-09-19', '日期正确');
@@ -186,7 +186,7 @@ const readFile = () => JSON.parse(fake.files.get('kaogong_data.json'));
   eq(readFile().records.map((r) => r.paperName), ['第29季', '第31季'], '文件里的记录顺序与内容');
 
   console.log('--- 删除记录后自动落盘 ---');
-  const row = $$('#records-table tbody tr').find((tr) => tr.children[1].textContent.trim() === '第31季');
+  const row = $$('#records-table-default tbody tr').find((tr) => tr.children[1].textContent.trim() === '第31季');
   row.querySelector('[data-act="delete"]').click();
   await wait(250);
   $('#modal-root [data-act="ok"]').click();
@@ -210,7 +210,7 @@ const readFile = () => JSON.parse(fake.files.get('kaogong_data.json'));
   const ls = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
   eq(ls.records.length, 3, '覆盖后本地变成 3 条');
   eq(ls.records.map((r) => r.paperName), ['第29季', '外部A', '外部B'], '覆盖后内容来自文件');
-  eq($$('#records-table tbody tr').length, 3, '主表刷新为 3 行');
+  eq($$('#records-table-default tbody tr').length, 3, '主表刷新为 3 行');
   eq(errors.length, 0, '读取覆盖路径无 JS 报错' + (errors.length ? ' -> ' + errors.join(' | ') : ''));
 
   console.log('--- 文件不存在时的读取 ---');

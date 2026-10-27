@@ -16,6 +16,9 @@ var KG = window.KG || (window.KG = {});
     targets: Store.defaultTargets(),
     timePlan: Store.defaultTimePlan(),
     records: [],
+    templates: [cloneDeep(M.DEFAULT_TEMPLATE)],
+    currentTemplateId: 'default',
+    moduleLibrary: cloneDeep(M.MODULE_LIBRARY),
     updatedAt: '',
     activeTab: 'records',
     timeFocusId: '',   // 用时分析里选中的套卷；空字符串 = 跟随最近一次
@@ -33,6 +36,8 @@ var KG = window.KG || (window.KG = {});
     chartFilter: { score: 'all', module: 'all', time: 'total', statsModule: 'all', timeAnalysis: 'total' },
     libs: { xlsx: false, echarts: false }
   };
+
+  function cloneDeep(o) { return JSON.parse(JSON.stringify(o)); }
 
   var PANEL_IDS = {
     records: 'panel-records',
@@ -82,16 +87,27 @@ var KG = window.KG || (window.KG = {});
       version: payload.version,
       settings: payload.settings,
       targets: payload.targets,
-      records: payload.records
+      timePlan: payload.timePlan,
+      records: payload.records,
+      templates: payload.templates,
+      currentTemplateId: payload.currentTemplateId,
+      moduleLibrary: payload.moduleLibrary,
+      plans: payload.plans,
+      planRules: payload.planRules,
+      sessions: payload.sessions
     });
     merged.records.forEach(function (r) {
       if (!r.id) r.id = U.uuid();
-      M.normalizeRecord(r);
+      var tpl = M.findTemplate(merged.templates, r.templateId);
+      M.normalizeRecord(r, tpl);
     });
     state.settings = merged.settings;
     state.targets = merged.targets;
     state.timePlan = merged.timePlan;
     state.records = merged.records;
+    state.templates = merged.templates;
+    state.currentTemplateId = merged.currentTemplateId || 'default';
+    state.moduleLibrary = merged.moduleLibrary;
     state.plans = merged.plans;
     state.planRules = merged.planRules;
     state.sessions = merged.sessions;
@@ -216,11 +232,17 @@ var KG = window.KG || (window.KG = {});
     updateToolbarState();
   }
 
+  /** 当前用于统计 / 图表 / Excel 双向的 records：第一版只取默认模版 records，
+      自定义模版的记录暂时不参与跨记录统计与 Sheet1 双向兼容 */
+  function defaultRecords() {
+    return state.records.filter(function (r) {
+      return !r.templateId || r.templateId === 'default';
+    });
+  }
+
   function renderCharts() {
-    // 各面板都过一遍：可见面板立即绘制，隐藏面板只记录 dirty + 切换占位，
-    // 等切到该面板（容器有尺寸）时再补绘，避免 ECharts 在 0 尺寸容器上画出空白。
     ALL_PANELS.forEach(function (pid) {
-      KG.Charts.renderPanel(pid, state.records, state);
+      KG.Charts.renderPanel(pid, defaultRecords(), state);
     });
   }
 
@@ -285,7 +307,7 @@ var KG = window.KG || (window.KG = {});
     });
     // 面板刚显示出来，此时容器才有尺寸，补绘该面板的图表
     requestAnimationFrame(function () {
-      KG.Charts.renderPanel(activePanelId(), state.records, state);
+      KG.Charts.renderPanel(activePanelId(), defaultRecords(), state);
       KG.Charts.resizeAll();
       if (tab === 'records') UI.placeSubPop();
       if (tab === 'plans') UI.renderPlans(state);
@@ -500,22 +522,43 @@ var KG = window.KG || (window.KG = {});
 
   function exportXlsx() {
     if (!state.libs.xlsx) { UI.toast('SheetJS 未加载，无法导出。请联网后刷新页面重试。', 'error'); return; }
-    if (!state.records.length) { UI.toast('没有可导出的记录', 'error'); return; }
+    var defaultRecs = state.records.filter(function (r) { return !r.templateId || r.templateId === 'default'; });
+    var customRecsCount = state.records.length - defaultRecs.length;
+    if (!defaultRecs.length && !customRecsCount) { UI.toast('没有可导出的记录', 'error'); return; }
     try {
-      KG.Export.exportXlsx(state.records, '套卷复盘.xlsx');
-      UI.toast('已导出 套卷复盘.xlsx（' + state.records.length + ' 套）', 'success');
+      if (defaultRecs.length) {
+        KG.Export.exportXlsx(defaultRecs, '套卷复盘.xlsx');
+        UI.toast('已导出 套卷复盘.xlsx（默认模版 ' + defaultRecs.length + ' 套）' +
+          (customRecsCount ? '；自定义模版请用「导出自定义模版」。' : ''), 'success', customRecsCount ? 5000 : 3000);
+      } else {
+        UI.toast('默认模版没有记录；自定义模版请用「导出自定义模版」按钮。', 'info', 4500);
+      }
     } catch (e) {
       UI.toast('导出失败：' + (e && e.message ? e.message : '未知错误'), 'error', 5000);
+    }
+  }
+
+  function exportCustomTemplates() {
+    if (!state.libs.xlsx) { UI.toast('SheetJS 未加载，无法导出。', 'error'); return; }
+    var customTemplates = (state.templates || []).filter(function (t) { return !t.isDefault; });
+    if (!customTemplates.length) { UI.toast('没有自定义模版，无需导出。', 'info'); return; }
+    var ok = KG.Export.exportCustomTemplates(state.templates, state.records, '自定义模版套卷.xlsx');
+    if (ok) {
+      var n = state.records.filter(function (r) { return r.templateId && r.templateId !== 'default'; }).length;
+      UI.toast('已导出 自定义模版套卷.xlsx（' + customTemplates.length + ' 个模版 / ' + n + ' 套）', 'success');
+    } else {
+      UI.toast('自定义模版下没有记录可导出。', 'info');
     }
   }
 
   /* ==================== 导出平表 CSV ==================== */
 
   function exportCsv() {
-    if (!state.records.length) { UI.toast('没有可导出的记录', 'error'); return; }
+    var defaultRecs = state.records.filter(function (r) { return !r.templateId || r.templateId === 'default'; });
+    if (!defaultRecs.length) { UI.toast('默认模版没有记录可导出（自定义模版不进 CSV）', 'error'); return; }
     try {
-      KG.CsvExport.exportFlatCsv(state.records);
-      UI.toast('已导出平表 CSV（' + state.records.length + ' 条）。可直接导入飞书多维表格。', 'success', 4500);
+      KG.CsvExport.exportFlatCsv(defaultRecs);
+      UI.toast('已导出平表 CSV（默认模版 ' + defaultRecs.length + ' 条）。可直接导入飞书多维表格。', 'success', 4500);
     } catch (e) {
       UI.toast('导出 CSV 失败：' + (e && e.message ? e.message : '未知错误'), 'error', 5000);
     }
@@ -532,6 +575,9 @@ var KG = window.KG || (window.KG = {});
       targets: state.targets,
       timePlan: state.timePlan,
       records: state.records,
+      templates: state.templates,
+      currentTemplateId: state.currentTemplateId,
+      moduleLibrary: state.moduleLibrary,
       plans: state.plans,
       planRules: state.planRules,
       sessions: state.sessions
@@ -574,18 +620,25 @@ var KG = window.KG || (window.KG = {});
           targets: data.targets,
           timePlan: data.timePlan,
           records: data.records,
+          templates: data.templates,
+          currentTemplateId: data.currentTemplateId,
+          moduleLibrary: data.moduleLibrary,
           plans: data.plans || [],
           planRules: data.planRules || [],
           sessions: data.sessions || []
         });
         merged.records.forEach(function (r) {
           if (!r.id) r.id = U.uuid();
-          M.normalizeRecord(r);
+          var tpl = M.findTemplate(merged.templates, r.templateId);
+          M.normalizeRecord(r, tpl);
         });
         state.settings = merged.settings;
         state.targets = merged.targets;
         state.timePlan = merged.timePlan;
         state.records = merged.records;
+        state.templates = merged.templates;
+        state.currentTemplateId = merged.currentTemplateId || 'default';
+        state.moduleLibrary = merged.moduleLibrary;
         state.plans = merged.plans;
         state.planRules = merged.planRules;
         state.sessions = merged.sessions;
@@ -615,7 +668,7 @@ var KG = window.KG || (window.KG = {});
 
   function setChartFilter(which, key) {
     state.chartFilter[which] = key;
-    KG.Charts.renderPanel(activePanelId(), state.records, state);
+    KG.Charts.renderPanel(activePanelId(), defaultRecords(), state);
   }
 
   /* ==================== 每日计划 ==================== */
@@ -923,12 +976,39 @@ var KG = window.KG || (window.KG = {});
     UI.toast('已删除这条计时记录', 'success');
   }
 
-  /* ==================== 事件绑定 ==================== */
+  /* ==================== 套卷模版 CRUD ==================== */
+
+  /** 模版管理模态返回的变更应用回 state 并持久化 */
+  function applyTemplateChange(change) {
+    if (change.templates) state.templates = change.templates;
+    if (change.currentTemplateId) state.currentTemplateId = change.currentTemplateId;
+    // 模版结构变化后，所有记录按各自模版重新规整一遍
+    state.records.forEach(function (r) {
+      var tpl = M.findTemplate(state.templates, r.templateId);
+      M.normalizeRecord(r, tpl);
+    });
+    persist();
+    renderAll();
+  }
+
+  /** 单个模版保存（来自编辑器） */
+  function applyTemplateSaved(template) {
+    var existing = state.templates.slice();
+    var idx = -1;
+    for (var i = 0; i < existing.length; i++) if (existing[i].id === template.id) { idx = i; break; }
+    if (idx >= 0) existing[idx] = template;
+    else existing.push(template);
+    applyTemplateChange({ templates: existing });
+  }
+
+
 
   function bindEvents() {
     document.getElementById('btn-add').addEventListener('click', addRecord);
     document.getElementById('btn-import').addEventListener('click', pickXlsx);
     document.getElementById('btn-export').addEventListener('click', exportXlsx);
+    var btnExportCustom = document.getElementById('btn-export-custom');
+    if (btnExportCustom) btnExportCustom.addEventListener('click', exportCustomTemplates);
     document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
     document.getElementById('btn-backup').addEventListener('click', backupJson);
     document.getElementById('btn-restore').addEventListener('click', pickJson);
@@ -941,6 +1021,10 @@ var KG = window.KG || (window.KG = {});
         renderAll();
         UI.toast('阶段目标已保存', 'success');
       });
+    });
+    var btnTpl = document.getElementById('btn-manage-templates');
+    if (btnTpl) btnTpl.addEventListener('click', function () {
+      UI.openTemplateManager(state, applyTemplateChange);
     });
     document.getElementById('btn-edit-timeplan').addEventListener('click', function () {
       UI.openTimePlanForm(state, function (timePlan) {
@@ -1107,20 +1191,28 @@ var KG = window.KG || (window.KG = {});
       UI.renderRecordsTable(state);
     });
 
-    // 表格行操作（事件委托）
-    document.getElementById('records-table').addEventListener('click', function (e) {
-      var btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      var tr = btn.closest('tr');
-      var id = tr && tr.getAttribute('data-id');
-      var act = btn.getAttribute('data-act');
-      if (act === 'sub-col') { UI.toggleSubPop(state, btn.getAttribute('data-key')); return; }
-      var rec = state.records.find(function (r) { return r.id === id; });
-      if (!rec) return;
-      if (act === 'view') UI.openDetail(rec, state);
-      else if (act === 'edit') editRecord(rec);
-      else if (act === 'delete') deleteRecord(rec);
-    });
+    // 表格行操作（事件委托，覆盖多张模版表）
+    var recordsContainer = document.getElementById('records-by-template');
+    if (recordsContainer) {
+      recordsContainer.addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-act]');
+        if (!btn) return;
+        var act = btn.getAttribute('data-act');
+        if (act === 'sub-col') {
+          var tplId = btn.getAttribute('data-template');
+          var key = btn.getAttribute('data-key');
+          UI.toggleSubPop(state, tplId, key);
+          return;
+        }
+        var tr = btn.closest('tr');
+        var id = tr && tr.getAttribute('data-id');
+        var rec = state.records.find(function (r) { return r.id === id; });
+        if (!rec) return;
+        if (act === 'view') UI.openDetail(rec, state);
+        else if (act === 'edit') editRecord(rec);
+        else if (act === 'delete') deleteRecord(rec);
+      });
+    }
 
     // 空状态区域内的按钮
     document.getElementById('records-empty').addEventListener('click', function (e) {
@@ -1157,6 +1249,9 @@ var KG = window.KG || (window.KG = {});
     state.targets = loaded.targets;
     state.timePlan = loaded.timePlan;
     state.records = loaded.records;
+    state.templates = loaded.templates || [cloneDeep(M.DEFAULT_TEMPLATE)];
+    state.currentTemplateId = loaded.currentTemplateId || 'default';
+    state.moduleLibrary = loaded.moduleLibrary || cloneDeep(M.MODULE_LIBRARY);
     state.plans = loaded.plans || [];
     state.planRules = loaded.planRules || [];
     state.sessions = loaded.sessions || [];
@@ -1180,7 +1275,7 @@ var KG = window.KG || (window.KG = {});
       UI.toast('已载入示例数据（第29季 2026-09-19），可直接删除或改成你自己的。', 'info', 5200);
     }
 
-    KG.Charts.renderPanel(activePanelId(), state.records, state);
+    KG.Charts.renderPanel(activePanelId(), defaultRecords(), state);
 
     window.KGLoadLibs().then(function (r) {
       state.libs = { xlsx: r.xlsx, echarts: r.echarts, loaded: true };
@@ -1188,7 +1283,7 @@ var KG = window.KG || (window.KG = {});
       renderCharts();
       if (r.xlsx && r.echarts) {
         // 库就绪后重绘当前面板的图表
-        KG.Charts.renderPanel(activePanelId(), state.records, state);
+        KG.Charts.renderPanel(activePanelId(), defaultRecords(), state);
       }
     });
 

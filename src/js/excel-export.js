@@ -228,9 +228,151 @@ var KG = window.KG || (window.KG = {});
     window.XLSX.writeFile(wb, filename || '套卷复盘.xlsx', { bookType: 'xlsx' });
   }
 
+  /* ---------------- 自定义模版导出（多 sheet 简化表） ----------------
+   * 默认模版走 Sheet1（上面那套）；自定义模版走简化表：
+   *   行 1: 大模块名（跨子模块列合并；无子模块时占 1 列）
+   *   行 2: 子模块名（无子模块时写大模块名）
+   *   之后每套卷 5 行块：总题数 / 正确题数 / 正确率 / 平均正确率 / 用时
+   *   前 5 列固定为 日期/试卷/分数/平均分/击败比，第 6 列起为模块列
+   */
+  function templateSheetFor(template, records) {
+    var XLSX = window.XLSX;
+    var mods = template.modules || [];
+    // 列布局：A 日期 B 试卷 C 分数 D 平均分 E 击败比；F 起为模块列
+    var colOffset = 5;
+    // 计算每个模块占多少列、子模块起始列
+    var layout = [];
+    var cursor = colOffset;
+    mods.forEach(function (mod) {
+      var span = mod.hasSub ? (mod.subModules || []).length : 1;
+      layout.push({ mod: mod, startCol: cursor, span: span });
+      cursor += span;
+    });
+    var totalCols = cursor;
+
+    var row1 = new Array(totalCols).fill(null);
+    row1[0] = '日期'; row1[1] = '试卷'; row1[2] = '分数'; row1[3] = '平均分'; row1[4] = '击败比';
+    var row2 = new Array(totalCols).fill(null);
+    var merges = [];
+    // A~E 跨 5 行块合并（与 Sheet1 一致），第 0~4 列在写数据时只在「正确题数」行赋值
+    for (var i = 0; i < records.length; i++) {
+      var s = 2 + i * 5;
+      for (var L = 0; L < 5; L++) {
+        merges.push({ s: { r: s, c: L }, e: { r: s + 3, c: L } });
+      }
+    }
+    layout.forEach(function (item) {
+      var mod = item.mod;
+      if (mod.hasSub) {
+        row1[item.startCol] = mod.name;
+        // 跨子模块列合并（一行内的横向合并）
+        if (item.span > 1) {
+          merges.push({ s: { r: 0, c: item.startCol }, e: { r: 0, c: item.startCol + item.span - 1 } });
+        }
+        (mod.subModules || []).forEach(function (s, idx) {
+          row2[item.startCol + idx] = s.name;
+        });
+      } else {
+        // 无子模块：第 1 行写大模块名（与第 2 行合并）
+        row1[item.startCol] = mod.name;
+        row2[item.startCol] = mod.name;
+        merges.push({ s: { r: 0, c: item.startCol }, e: { r: 1, c: item.startCol } });
+      }
+    });
+
+    var ws = {};
+    var R = 0;
+    function setCell(r, c, v, fmt) {
+      if (v === null || v === undefined) return;
+      var addr = XLSX.utils.encode_cell({ r: r, c: c });
+      var cell;
+      if (typeof v === 'number') cell = { t: 'n', v: v };
+      else cell = { t: 's', v: String(v) };
+      if (fmt) cell.z = fmt;
+      ws[addr] = cell;
+    }
+    for (var c1 = 0; c1 < totalCols; c1++) {
+      setCell(0, c1, row1[c1]);
+      setCell(1, c1, row2[c1]);
+    }
+
+    // 每套卷 5 行块
+    var DATA_ROWS = ['总题数', '正确题数', '正确率', '平均正确率', '用时'];
+    records.forEach(function (rec, idx) {
+      var baseR = 2 + idx * 5;
+      // 基本信息写在「正确题数」行（baseR + 1）
+      setCell(baseR + 1, 0, U.dateStringToSerial(rec.date), DATE_FMT);
+      setCell(baseR + 1, 1, rec.paperName || '');
+      setCell(baseR + 1, 2, rec.score);
+      setCell(baseR + 1, 3, rec.averageScore);
+      setCell(baseR + 1, 4, rec.defeatRate === null ? null : rec.defeatRate / 100, PCT_FMT);
+
+      // 行标签写在 F... 但这里 F 是模块列了。把行标签塞进第 0 列（日期列）的其它行
+      // 简化表设计：行标签独立写成一列（用最后一列做标签），避免占日期列。
+      // 这里改用第 totalCols 列作为标签列（追加在末尾）
+      // —— 但为了不破坏 5 行块结构，干脆不写行标签，靠行序约定（1=总题数 2=正确题数 ...）
+      // 这与 Sheet1 的「F 列写行标签」不同，但简洁。
+      layout.forEach(function (item) {
+        var mod = item.mod;
+        var modData = (rec.modules && rec.modules[mod.key]) || {};
+        if (mod.hasSub) {
+          (mod.subModules || []).forEach(function (s, idx) {
+            var sm = (modData.subModules && modData.subModules[s.key]) || {};
+            var col = item.startCol + idx;
+            setCell(baseR + 0, col, sm.questions);
+            setCell(baseR + 1, col, sm.correct);
+            setCell(baseR + 2, col, sm.accuracy === null ? null : sm.accuracy / 100, PCT_FMT);
+            setCell(baseR + 3, col, sm.avgAccuracy === null ? null : sm.avgAccuracy / 100, PCT_FMT);
+            setCell(baseR + 4, col, sm.time);
+          });
+        } else {
+          var col = item.startCol;
+          setCell(baseR + 0, col, modData.questions);
+          setCell(baseR + 1, col, modData.correct);
+          setCell(baseR + 2, col, modData.accuracy === null ? null : modData.accuracy / 100, PCT_FMT);
+          setCell(baseR + 3, col, modData.avgAccuracy === null ? null : modData.avgAccuracy / 100, PCT_FMT);
+          setCell(baseR + 4, col, modData.time);
+        }
+      });
+    });
+
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 1 + records.length * 5, c: totalCols - 1 } });
+    ws['!merges'] = merges;
+    ws['!cols'] = [];
+    for (var cc = 0; cc < totalCols; cc++) {
+      var letter = XLSX.utils.encode_col(cc);
+      ws['!cols'].push({ wch: (cc < 5 ? [12, 14, 8, 8, 9][cc] : 9) });
+    }
+    return ws;
+  }
+
+  /** 把所有自定义模版的 records 各自导出成一个 sheet */
+  function exportCustomTemplates(templates, allRecords, filename) {
+    var XLSX = window.XLSX;
+    var wb = XLSX.utils.book_new();
+    var any = false;
+    (templates || []).forEach(function (tpl) {
+      if (tpl.isDefault) return;
+      var recs = allRecords.filter(function (r) { return (r.templateId || 'default') === tpl.id; });
+      if (!recs.length) return;
+      var ws = templateSheetFor(tpl, recs);
+      var sheetName = (tpl.name || '自定义模版').slice(0, 28);
+      // 防止重名
+      var unique = sheetName, n = 2;
+      while (wb.SheetNames.indexOf(unique) >= 0) { unique = sheetName.slice(0, 25) + '_' + (n++); }
+      XLSX.utils.book_append_sheet(wb, ws, unique);
+      any = true;
+    });
+    if (!any) return false;
+    window.XLSX.writeFile(wb, filename || '自定义模版套卷.xlsx', { bookType: 'xlsx' });
+    return true;
+  }
+
   KG.Export = {
     recordsToSheet1: recordsToSheet1,
     recordsToWorkbook: recordsToWorkbook,
-    exportXlsx: exportXlsx
+    exportXlsx: exportXlsx,
+    templateSheetFor: templateSheetFor,
+    exportCustomTemplates: exportCustomTemplates
   };
 })();

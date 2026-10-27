@@ -80,20 +80,23 @@ function setInput(el, value) {
 
   console.log('--- 测试 1：首次打开 ---');
   eq(errors.length, 0, '打开页面无 JS 报错' + (errors.length ? ' -> ' + errors.join(' | ') : ''));
-  ok($('#records-table'), '主表存在');
+  ok($('#records-table-default'), '默认模版主表存在');
   ok(win.localStorage.getItem('kaogong_dashboard'), '首次打开已把内置初始数据写入 localStorage');
   const st0 = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
-  eq(st0.version, 1, 'localStorage 结构带 version');
+  eq(st0.version, 2, 'localStorage 结构带 version=2');
   eq(st0.records.length, 1, '内置 1 条初始记录（来自 Excel Sheet1）');
   eq(st0.records[0].paperName, '第29季', '初始记录为第29季');
   eq(st0.records[0].date, '2026-09-19', '初始记录日期正确（没有差一天）');
+  eq(st0.records[0].templateId, 'default', '初始记录绑默认模版');
+  eq(st0.templates && st0.templates.length, 1, '默认带 1 个模版（默认模版）');
+  eq(st0.currentTemplateId, 'default', '当前模版 = default');
   eq(st0.settings, { defeatTarget: 95, defeatWarning: 85, scoreTarget: 85, scoreWarning: 70 }, '默认目标设置');
 
   console.log('--- 初始数据渲染 ---');
   eq($$('#overview-cards .stat-card').length, 4, '4 个概览卡片');
   eq(text('#overview-cards .stat-card:first-child .stat-value'), '1', '套卷总数 = 1');
-  const rows0 = $$('#records-table tbody tr');
-  eq(rows0.length, 1, '主表 1 行');
+  const rows0 = $$('#records-table-default tbody tr');
+  eq(rows0.length, 1, '默认模版主表 1 行');
   const cells = Array.from(rows0[0].children).map((td) => td.textContent.trim());
   eq(cells.slice(0, 5), ['2026-09-19', '第29季', '58.5', '57.3', '59.4%'], '主表基本信息列');
   eq(cells.slice(5, 11), ['30%', '66.67%', '66.67%', '50%', '57.14%', '100%'], '主表六大模块总正确率');
@@ -201,24 +204,24 @@ function setInput(el, value) {
   eq(added.modules.political.avgAccuracy, 82, '平均正确率按填写值保存（政治理论 82）');
   eq(added.modules.common.avgAccuracy, null, '未填写的平均正确率为 null（即「无」，不沿用上一套的值）');
   eq(added.modules.reasoning.avgAccuracy, 90, '分组模块的平均正确率取自「总计」行输入');
-  eq($$('#records-table tbody tr').length, 2, '主表刷新为 2 行');
+  eq($$('#records-table-default tbody tr').length, 2, '主表刷新为 2 行');
 
   console.log('--- 表头小窗：点击言语理解 / 判断推理 ---');
   const clickEl = (el) => el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
-  const thBtn = (key) => $(`#records-table thead button[data-act="sub-col"][data-key="${key}"]`);
-  const pop = () => $('#records-table').closest('.table-scroll').querySelector('.sub-pop');
+  const thBtn = (key) => $(`#records-table-default thead button[data-act="sub-col"][data-key="${key}"]`);
+  const pop = () => $('#records-table-default').closest('.table-scroll').querySelector('.sub-pop');
   const popGrid = () => $$('.sub-pop tbody tr').map((tr) => Array.from(tr.children).map((td) => td.textContent.trim()));
   const popCls = () => $$('.sub-pop tbody tr').map((tr) => Array.from(tr.children).map((td) => (td.querySelector('.pct') || {}).className || ''));
-  eq($$('#records-table thead button[data-act="sub-col"]').length, 2, '只有言语理解 / 判断推理两个表头可点');
+  eq($$('#records-table-default thead button[data-act="sub-col"]').length, 2, '只有言语理解 / 判断推理两个表头可点');
   eq(pop(), null, '默认不显示小窗');
-  eq($$('#records-table tbody tr').length, 2, '主表 2 行（新增后）');
+  eq($$('#records-table-default tbody tr').length, 2, '主表 2 行（新增后）');
 
   clickEl(thBtn('language'));
   ok(pop(), '点击言语理解表头后出现小窗');
   eq($('#modal-root .modal'), null, '小窗不是弹窗');
   eq($$('.sub-pop thead th').map((th) => th.textContent.trim()), ['逻辑填空', '片段阅读', '语句表达'], '小窗列 = 言语理解子模块');
   eq($$('.sub-pop tbody tr').length, 2, '每个套卷一行（与主表数据行数一致）');
-  eq($$('#records-table tbody tr').length, 2, '主表行数不受影响');
+  eq($$('#records-table-default tbody tr').length, 2, '主表行数不受影响');
   eq(popGrid(), [['86.67%', '90%', '80%'], ['60%', '70%', '80%']], '两个套卷的子模块正确率各占一行（第30季 / 第29季）');
   eq(popCls(), [['pct pct-warn', 'pct pct-ok', 'pct pct-warn'], ['pct pct-bad', 'pct pct-bad', 'pct pct-warn']],
     '子模块按言语理解的阶段目标着色（目标 90 绿 / 下限 80 黄 / 低于红）');
@@ -237,7 +240,7 @@ function setInput(el, value) {
   // 小窗跟随筛选：只剩 1 条时只显示 1 行
   clickEl(thBtn('language'));
   setInput($('#filter-keyword'), '第30季');
-  eq($$('#records-table tbody tr').length, 1, '筛选后主表 1 行');
+  eq($$('#records-table-default tbody tr').length, 1, '筛选后主表 1 行');
   eq($$('.sub-pop tbody tr').length, 1, '小窗跟随筛选，同样 1 行');
   eq(popGrid(), [['86.67%', '90%', '80%']], '小窗行内容 = 被留下的那条');
   $('#btn-filter-reset').click();
@@ -274,7 +277,7 @@ function setInput(el, value) {
   await wait(250);   // 弹窗淡出动画 180ms，等它结束再断言，否则会读到正在淡出的旧节点
 
   console.log('--- 测试 3：编辑 ---');
-  let rows = $$('#records-table tbody tr');
+  let rows = $$('#records-table-default tbody tr');
   const rowFor = (paper) => rows.find((tr) => tr.children[1].textContent.trim() === paper);
   rowFor('第30季').querySelector('[data-act="edit"]').click();
   await wait(250);   // 弹窗淡出动画 180ms，等它结束再断言，否则会读到正在淡出的旧节点
@@ -292,7 +295,7 @@ function setInput(el, value) {
   eq(errors.length, 0, '编辑过程无 JS 报错' + (errors.length ? ' -> ' + errors.join(' | ') : ''));
 
   console.log('--- 查看详情 ---');
-  rows = $$('#records-table tbody tr');
+  rows = $$('#records-table-default tbody tr');
   rowFor('第29季').querySelector('[data-act="view"]').click();
   await wait(250);   // 弹窗淡出动画 180ms，等它结束再断言，否则会读到正在淡出的旧节点
   const detailText = $('#modal-root .modal-body').textContent;
@@ -316,7 +319,7 @@ function setInput(el, value) {
   eq(st3.records.filter((r) => r.paperName === '第29季').length, 1, '第29季只有一条');
 
   console.log('--- 测试 4：删除 ---');
-  rows = $$('#records-table tbody tr');
+  rows = $$('#records-table-default tbody tr');
   rowFor('第30季').querySelector('[data-act="delete"]').click();
   await wait(250);   // 弹窗淡出动画 180ms，等它结束再断言，否则会读到正在淡出的旧节点
   ok($('#modal-root .modal-body').textContent.indexOf('确定删除？') >= 0, '删除前二次确认');
@@ -326,19 +329,19 @@ function setInput(el, value) {
   const st4 = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
   eq(st4.records.length, 1, '删除后剩 1 条');
   eq(st4.records[0].paperName, '第29季', '删除的是第30季');
-  eq($$('#records-table tbody tr').length, 1, '主表刷新为 1 行');
+  eq($$('#records-table-default tbody tr').length, 1, '主表刷新为 1 行');
   eq(errors.length, 0, '删除过程无 JS 报错' + (errors.length ? ' -> ' + errors.join(' | ') : ''));
 
   console.log('--- 筛选与排序 ---');
   setInput($('#filter-keyword'), '不存在的季');
-  eq($$('#records-table tbody tr').length, 0, '搜索无匹配时主表为空');
+  eq($$('#records-table-default tbody tr').length, 0, '搜索无匹配时主表为空');
   ok(!$('#records-empty').hidden, '显示空状态提示');
   setInput($('#filter-keyword'), '');
   setInput($('#filter-date-from'), '2026-01-01');
   setInput($('#filter-date-to'), '2026-12-31');
-  eq($$('#records-table tbody tr').length, 1, '日期区间过滤生效');
+  eq($$('#records-table-default tbody tr').length, 1, '日期区间过滤生效');
   $('#btn-filter-reset').click();
-  eq($$('#records-table tbody tr').length, 1, '重置筛选');
+  eq($$('#records-table-default tbody tr').length, 1, '重置筛选');
 
   console.log('--- 清空记录需输入 DELETE ---');
   $('#btn-clear').click();
@@ -381,7 +384,7 @@ function setInput(el, value) {
   eq(win.__blobs.length, 1, '备份生成了一个文件');
   const backupText = await win.__blobs[0].text();
   const backup = JSON.parse(backupText);
-  eq(backup.version, 1, '备份带 version');
+  eq(backup.version, 2, '备份带 version=2');
   eq(backup.records.length, 1, '备份包含 1 条记录');
   eq(backup.settings.defeatTarget, 90, '备份包含目标设置');
   ok(backup.targets && backup.targets.political && backup.targets.political.target === 80, '备份包含各模块阶段目标');
@@ -412,7 +415,7 @@ function setInput(el, value) {
   eq(afterRestore.records.length, 1, '恢复后记录数回到 1');
   eq(afterRestore.records[0].paperName, '第29季', '恢复出的记录内容正确');
   eq(afterRestore.settings.defeatTarget, 90, '恢复同时带回目标设置');
-  eq($$('#records-table tbody tr').length, 1, '主表恢复显示 1 行');
+  eq($$('#records-table-default tbody tr').length, 1, '主表恢复显示 1 行');
 
   console.log('--- 备份格式校验 ---');
   const badFile = new win.File(['{"foo":1}'], 'bad.json', { type: 'application/json' });
