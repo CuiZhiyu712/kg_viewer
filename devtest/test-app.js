@@ -83,7 +83,7 @@ function setInput(el, value) {
   ok($('#records-table-default'), '默认模版主表存在');
   ok(win.localStorage.getItem('kaogong_dashboard'), '首次打开已把内置初始数据写入 localStorage');
   const st0 = JSON.parse(win.localStorage.getItem('kaogong_dashboard'));
-  eq(st0.version, 2, 'localStorage 结构带 version=2');
+  eq(st0.version, 3, 'localStorage 结构带 version=3');
   eq(st0.records.length, 1, '内置 1 条初始记录（来自 Excel Sheet1）');
   eq(st0.records[0].paperName, '第29季', '初始记录为第29季');
   eq(st0.records[0].date, '2026-09-19', '初始记录日期正确（没有差一天）');
@@ -384,7 +384,7 @@ function setInput(el, value) {
   eq(win.__blobs.length, 1, '备份生成了一个文件');
   const backupText = await win.__blobs[0].text();
   const backup = JSON.parse(backupText);
-  eq(backup.version, 2, '备份带 version=2');
+  eq(backup.version, 3, '备份带 version=3');
   eq(backup.records.length, 1, '备份包含 1 条记录');
   eq(backup.settings.defeatTarget, 90, '备份包含目标设置');
   ok(backup.targets && backup.targets.political && backup.targets.political.target === 80, '备份包含各模块阶段目标');

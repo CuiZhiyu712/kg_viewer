@@ -15,6 +15,7 @@ var KG = window.KG || (window.KG = {});
     settings: Store.defaultSettings(),
     targets: Store.defaultTargets(),
     timePlan: Store.defaultTimePlan(),
+    timePlans: { default: Store.defaultTimePlan() },
     records: [],
     templates: [cloneDeep(M.DEFAULT_TEMPLATE)],
     currentTemplateId: 'default',
@@ -22,6 +23,8 @@ var KG = window.KG || (window.KG = {});
     updatedAt: '',
     activeTab: 'records',
     timeFocusId: '',   // 用时分析里选中的套卷；空字符串 = 跟随最近一次
+    timeTemplateId: 'default',  // 用时分析里选中的模版
+    trendTemplateId: 'all',     // 趋势分析里选中的模版（'all' = 跨模版合并）
     plans: [],
     planRules: [],
     sessions: [],
@@ -88,6 +91,7 @@ var KG = window.KG || (window.KG = {});
       settings: payload.settings,
       targets: payload.targets,
       timePlan: payload.timePlan,
+      timePlans: payload.timePlans,
       records: payload.records,
       templates: payload.templates,
       currentTemplateId: payload.currentTemplateId,
@@ -104,6 +108,7 @@ var KG = window.KG || (window.KG = {});
     state.settings = merged.settings;
     state.targets = merged.targets;
     state.timePlan = merged.timePlan;
+    state.timePlans = merged.timePlans || { default: merged.timePlan };
     state.records = merged.records;
     state.templates = merged.templates;
     state.currentTemplateId = merged.currentTemplateId || 'default';
@@ -228,6 +233,7 @@ var KG = window.KG || (window.KG = {});
     UI.renderPlans(state);
     UI.renderTimer(state);
     UI.renderChartSwitches(state);
+    UI.renderTrendTemplateSelect(state);
     renderCharts();
     updateToolbarState();
   }
@@ -242,7 +248,7 @@ var KG = window.KG || (window.KG = {});
 
   function renderCharts() {
     ALL_PANELS.forEach(function (pid) {
-      KG.Charts.renderPanel(pid, defaultRecords(), state);
+      KG.Charts.renderPanel(pid, null, state);
     });
   }
 
@@ -574,6 +580,7 @@ var KG = window.KG || (window.KG = {});
       settings: state.settings,
       targets: state.targets,
       timePlan: state.timePlan,
+      timePlans: state.timePlans,
       records: state.records,
       templates: state.templates,
       currentTemplateId: state.currentTemplateId,
@@ -619,6 +626,7 @@ var KG = window.KG || (window.KG = {});
           settings: data.settings,
           targets: data.targets,
           timePlan: data.timePlan,
+          timePlans: data.timePlans,
           records: data.records,
           templates: data.templates,
           currentTemplateId: data.currentTemplateId,
@@ -635,6 +643,7 @@ var KG = window.KG || (window.KG = {});
         state.settings = merged.settings;
         state.targets = merged.targets;
         state.timePlan = merged.timePlan;
+        state.timePlans = merged.timePlans || { default: merged.timePlan };
         state.records = merged.records;
         state.templates = merged.templates;
         state.currentTemplateId = merged.currentTemplateId || 'default';
@@ -1027,12 +1036,41 @@ var KG = window.KG || (window.KG = {});
       UI.openTemplateManager(state, applyTemplateChange);
     });
     document.getElementById('btn-edit-timeplan').addEventListener('click', function () {
-      UI.openTimePlanForm(state, function (timePlan) {
-        state.timePlan = timePlan;
+      var tpl = M.findTemplate(state.templates, state.timeTemplateId || 'default');
+      UI.openTimePlanForm(state, tpl, function (timePlan) {
+        state.timePlan = tpl.id === 'default' ? timePlan : state.timePlan;
+        state.timePlans = state.timePlans || {};
+        state.timePlans[tpl.id] = timePlan;
         persist();
         renderAll();
-        UI.toast('标准用时已保存', 'success');
+        UI.toast('「' + (tpl.name || '默认模版') + '」标准用时已保存', 'success');
       });
+    });
+    var timeTplSel = document.getElementById('time-template');
+    if (timeTplSel) timeTplSel.addEventListener('change', function () {
+      state.timeTemplateId = this.value || 'default';
+      state.timeFocusId = '';
+      renderAll();
+    });
+    var trendTplSel = document.getElementById('trend-template');
+    if (trendTplSel) trendTplSel.addEventListener('change', function () {
+      state.trendTemplateId = this.value || 'all';
+      // 切模版时如果当前选中的模块在新模版里不存在，回到「全部」
+      var filter = state.chartFilter;
+      var mods;
+      if (state.trendTemplateId === 'all') {
+        mods = {};
+        (state.templates || []).forEach(function (t) {
+          (t.modules || []).forEach(function (m) { mods[m.key] = true; });
+        });
+      } else {
+        var t = M.findTemplate(state.templates, state.trendTemplateId);
+        mods = {};
+        (t.modules || []).forEach(function (m) { mods[m.key] = true; });
+      }
+      if (filter.module !== 'all' && !mods[filter.module]) filter.module = 'all';
+      if (filter.time !== 'total' && !mods[filter.time]) filter.time = 'total';
+      renderAll();
     });
 
     // 用时分析：切换要对比的套卷
@@ -1248,6 +1286,7 @@ var KG = window.KG || (window.KG = {});
     state.settings = loaded.settings;
     state.targets = loaded.targets;
     state.timePlan = loaded.timePlan;
+    state.timePlans = loaded.timePlans || { default: loaded.timePlan };
     state.records = loaded.records;
     state.templates = loaded.templates || [cloneDeep(M.DEFAULT_TEMPLATE)];
     state.currentTemplateId = loaded.currentTemplateId || 'default';

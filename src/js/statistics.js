@@ -137,23 +137,27 @@ var KG = window.KG || (window.KG = {});
     });
   }
 
-  /** 模块正确率趋势用的数据点 */
-  function moduleSeries(records) {
+  /** 模块正确率趋势用的数据点。
+   *  template 可选：传入时按该模版 modules 生成 key 列；不传时按默认 6 模块（向后兼容） */
+  function moduleSeries(records, template) {
     var s = sortedAsc(records);
+    var tmods = template && template.modules ? template.modules : M.MODULES;
     return {
       points: s.map(function (r) {
         var row = { id: r.id, date: r.date, paperName: r.paperName };
-        M.MODULES.forEach(function (def) {
-          row[def.key] = M.moduleAccuracy(r, def.key);
+        tmods.forEach(function (mod) {
+          row[mod.key] = M.moduleAccuracy(r, mod.key);
         });
         return row;
-      })
+      }),
+      modules: tmods
     };
   }
 
-  /** 用时趋势用的数据点（总用时 + 六大模块用时） */
-  function timeSeries(records) {
+  /** 用时趋势用的数据点（总用时 + 模块用时） */
+  function timeSeries(records, template) {
     var s = sortedAsc(records);
+    var tmods = template && template.modules ? template.modules : M.MODULES;
     return s.map(function (r) {
       var row = {
         id: r.id,
@@ -161,9 +165,9 @@ var KG = window.KG || (window.KG = {});
         paperName: r.paperName,
         totalTime: r.total ? r.total.time : null
       };
-      M.MODULES.forEach(function (def) {
-        var m = r.modules[def.key];
-        row[def.key] = m ? m.time : null;
+      tmods.forEach(function (mod) {
+        var m = r.modules[mod.key];
+        row[mod.key] = m ? m.time : null;
       });
       return row;
     });
@@ -235,44 +239,48 @@ var KG = window.KG || (window.KG = {});
   /**
    * 用时分析表：模块行 + 分组模块的子模块行（顺序与界面一致）
    * focusId 指定「实际用时」看哪一次；不传则用最近一次。
+   * template 可选：传入时只遍历该模版的 modules（自定义模版走这条路径）；
+   *   不传时按默认 6 模块遍历（向后兼容）。
    * 缺失值一律为 null，不产生 NaN。
    */
-  function timeStats(records, timePlan, focusId) {
+  function timeStats(records, timePlan, focusId, template) {
     var s = sortedAsc(records);
     var cur = pickFocus(s, focusId);
-    var plan = M.normalizeTimePlan(timePlan);
+    var plan = M.normalizeTimePlan(timePlan, template);
     var rows = [];
 
-    M.MODULES.forEach(function (def) {
-      var m = cur && cur.modules[def.key] ? cur.modules[def.key] : null;
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    tmods.forEach(function (tmod) {
+      var key = tmod.key;
+      var m = cur && cur.modules[key] ? cur.modules[key] : null;
       rows.push(buildTimeRow({
-        key: def.key,
-        name: def.name,
+        key: key,
+        name: tmod.name,
         level: 'module',
-        plan: plan[def.key].plan,
+        plan: plan[key] ? plan[key].plan : null,
         latestActual: m ? m.time : null,
         latestDate: cur ? cur.date : '',
         latestPaper: cur ? cur.paperName : '',
         records: s,
-        getActual: function (r) { var x = r.modules[def.key]; return x ? x.time : null; }
+        getActual: function (r) { var x = r.modules[key]; return x ? x.time : null; }
       }));
 
-      var subs = M.SUBMODULES[def.key];
+      var subs = tmod.hasSub ? (tmod.subModules || []) : null;
       if (!subs) return;
       subs.forEach(function (sub) {
         var sm = (m && m.subModules && m.subModules[sub.key]) ? m.subModules[sub.key] : null;
         rows.push(buildTimeRow({
-          key: def.key + '.' + sub.key,
+          key: key + '.' + sub.key,
           name: sub.name,
           level: 'sub',
-          parent: def.name,
-          plan: plan[def.key].subs ? plan[def.key].subs[sub.key] : null,
+          parent: tmod.name,
+          plan: plan[key] && plan[key].subs ? plan[key].subs[sub.key] : null,
           latestActual: sm ? sm.time : null,
           latestDate: cur ? cur.date : '',
           latestPaper: cur ? cur.paperName : '',
           records: s,
           getActual: function (r) {
-            var x = r.modules[def.key];
+            var x = r.modules[key];
             if (!x || !x.subModules || !x.subModules[sub.key]) return null;
             return x.subModules[sub.key].time;
           }
@@ -284,11 +292,11 @@ var KG = window.KG || (window.KG = {});
   }
 
   /** 总用时达成率 + 超时排行（同样跟随 focusId 选中的那一次） */
-  function timeOverview(records, timePlan, focusId) {
-    var planTotal = M.timePlanTotal(timePlan);
+  function timeOverview(records, timePlan, focusId, template) {
+    var planTotal = M.timePlanTotal(timePlan, template);
     var s = sortedAsc(records);
     var cur = pickFocus(s, focusId);
-    var rows = timeStats(records, timePlan, focusId);
+    var rows = timeStats(records, timePlan, focusId, template);
     var moduleRows = rows.filter(function (r) { return r.level === 'module'; });
 
     var focusTotal = cur && cur.total ? U.toNumber(cur.total.time) : null;

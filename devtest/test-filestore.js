@@ -141,7 +141,7 @@ const readFile = () => JSON.parse(fake.files.get('kaogong_data.json'));
   eq(fake.files.has('kaogong_data.json'), true, '目标文件已创建');
   const f1 = readFile();
   eq(f1.app, '考公练习追踪看板', '文件带应用标识');
-  eq(f1.version, 2, '文件带 version=2');
+  eq(f1.version, 3, '文件带 version=3');
   eq(f1.records.length, 1, '文件里有 1 条记录');
   eq(f1.records[0].paperName, '第29季', '记录内容正确');
   eq(f1.records[0].date, '2026-09-19', '日期正确');

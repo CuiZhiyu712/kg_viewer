@@ -288,7 +288,7 @@ function planOf(state) { return state.timePlan; }
   eq(emptyState.planTotal, 113, '标准用时合计与记录无关');
 
   console.log('--- 0 / 空值边界 ---');
-  eq(KG.Stats.timeStats([], st3.timePlan).length, 13, '无记录时仍返回 13 行（计划值照常显示）');
+  eq(KG.Stats.timeStats([], st3.timePlan).length, 6, '无记录时仍返回 6 行（计划值照常显示，无子模块时按默认模版 6 模块）');
   eq(KG.Stats.timeStats([], st3.timePlan)[0].status.text, '无数据', '无记录时状态为无数据');
 
   eq(errors.length, 0, '全程无 JS 报错' + (errors.length ? ' -> ' + errors.join(' | ') : ''));

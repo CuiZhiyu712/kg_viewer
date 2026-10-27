@@ -2,7 +2,7 @@
   考公练习追踪看板（单文件版）· © 2026 CZY 保留所有权利
   未经作者授权，禁止转售、禁止商业使用、禁止去除本声明。
   由 build.py 自动生成，请勿直接修改本文件；改动请修改 src/ 后重新构建。
-  构建时间：2026-10-27 15:37:42
+  构建时间：2026-10-27 16:14:22
   第三方库：已内联 ECharts + SheetJS
   数据来源：仅使用「套卷复盘」XLSX 的第一个 Sheet（粉笔模考）。
   用户数据保存在各自浏览器的 localStorage；绑定数据文件夹后另存为本地 JSON。
@@ -1524,6 +1524,18 @@ body.has-timer-bar .app-main { padding-bottom: 110px; }
 
     <div class="card">
       <div class="card-head">
+        <h2 class="card-title">趋势分析</h2>
+        <div class="card-head-actions">
+          <label class="field field-inline">
+            <span class="field-label">模版</span>
+            <select class="input" id="trend-template" title="全部 = 跨模版按模块 key 合并；选具体模版只看该模版的模块趋势"></select>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <h2 class="card-title">击败比与分数变化趋势</h2>
       </div>
       <div class="card-body">
@@ -1564,6 +1576,10 @@ body.has-timer-bar .app-main { padding-bottom: 110px; }
       <div class="card-head">
         <h2 class="card-title">总用时达成率</h2>
         <div class="card-head-actions">
+          <label class="field field-inline">
+            <span class="field-label">模版</span>
+            <select class="input" id="time-template" title="选择要分析哪个模版的用时"></select>
+          </label>
           <label class="field field-inline">
             <span class="field-label">对比套卷</span>
             <select class="input" id="time-focus" title="选择要分析的套卷；默认跟随最近一次"></select>
@@ -2245,23 +2261,28 @@ var KG = window.KG || (window.KG = {});
     dataAnalysis: { plan: 25, subs: null }
   };
 
-  /** 生成一份完整的标准用时（缺失模块用默认值补齐） */
-  function normalizeTimePlan(tp) {
+  /** 生成一份完整的标准用时（缺失模块用默认值补齐）。
+   *  template 可选：传入时按该模版的 modules 列表生成（自定义模版走这条路径）；
+   *  不传时按默认 6 模块生成（向后兼容 statistics 旧调用）。 */
+  function normalizeTimePlan(tp, template) {
+    var tmods = template && template.modules ? template.modules : MODULES;
     var out = {};
-    MODULES.forEach(function (def) {
-      var d = DEFAULT_TIME_PLAN[def.key] || { plan: null, subs: null };
-      var v = (tp && tp[def.key]) || {};
+    tmods.forEach(function (tmod) {
+      var key = tmod.key;
+      var d = DEFAULT_TIME_PLAN[key] || { plan: null, subs: null };
+      var v = (tp && tp[key]) || {};
       var subs = null;
-      if (SUBMODULES[def.key]) {
+      var subDefs = tmod.hasSub ? (tmod.subModules || []) : (SUBMODULES[key] || null);
+      if (subDefs) {
         var ds = d.subs || {};
         subs = {};
-        SUBMODULES[def.key].forEach(function (s) {
+        subDefs.forEach(function (s) {
           var src = (v.subs && v.subs[s.key] !== undefined) ? v.subs[s.key] : ds[s.key];
           subs[s.key] = U.toNumber(src);
         });
       }
       // 只有「键缺失」才补默认值；显式 null 表示用户主动清空（不设标准），必须保留
-      out[def.key] = {
+      out[key] = {
         plan: v.plan === undefined ? U.toNumber(d.plan) : U.toNumber(v.plan),
         subs: subs
       };
@@ -2269,24 +2290,28 @@ var KG = window.KG || (window.KG = {});
     return out;
   }
 
-  /** 六大模块标准用时合计 */
-  function timePlanTotal(tp) {
+  /** 标准用时合计（按模版 modules 求和；缺省时退回默认 6 模块） */
+  function timePlanTotal(tp, template) {
+    var tmods = template && template.modules ? template.modules : MODULES;
     var sum = 0, has = false;
-    MODULES.forEach(function (def) {
-      var p = tp && tp[def.key] ? U.toNumber(tp[def.key].plan) : null;
+    tmods.forEach(function (tmod) {
+      var p = tp && tp[tmod.key] ? U.toNumber(tp[tmod.key].plan) : null;
       if (p !== null) { sum += p; has = true; }
     });
     return has ? U.round(sum, 2) : null;
   }
 
-  /** 分组模块的「模块标准用时」与其子模块之和是否不一致 */
-  function timePlanMismatch(tp, key) {
-    if (!SUBMODULES[key] || !tp || !tp[key]) return [];
+  /** 分组模块的「模块标准用时」与其子模块之和是否不一致（按模版 modules 判定） */
+  function timePlanMismatch(tp, key, template) {
+    var tmods = template && template.modules ? template.modules : MODULES;
+    var tmod = null;
+    for (var i = 0; i < tmods.length; i++) if (tmods[i].key === key) { tmod = tmods[i]; break; }
+    if (!tmod || !tmod.hasSub || !tp || !tp[key]) return [];
     var m = U.toNumber(tp[key].plan);
     if (m === null) return [];
     var subs = tp[key].subs || {};
     var sum = 0, has = false;
-    SUBMODULES[key].forEach(function (s) {
+    (tmod.subModules || []).forEach(function (s) {
       var v = U.toNumber(subs[s.key]);
       if (v !== null) { sum += v; has = true; }
     });
@@ -3501,7 +3526,7 @@ var KG = window.KG || (window.KG = {});
   var M = KG.Model;
 
   var KEY = 'kaogong_dashboard';
-  var VERSION = 2;
+  var VERSION = 3;
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -3518,12 +3543,19 @@ var KG = window.KG || (window.KG = {});
 
   function defaultTimePlan() { return M.normalizeTimePlan(null); }
 
+  /** 标准用时按模版独立：{ default: {...}, <tplId>: {...} }。
+   *  缺失模版的 timePlan 在 fillDefaults 里按各自模版补齐。 */
+  function defaultTimePlans() {
+    return { default: defaultTimePlan() };
+  }
+
   function defaultState(withSeed) {
     return {
       version: VERSION,
       settings: defaultSettings(),
       targets: defaultTargets(),
       timePlan: defaultTimePlan(),
+      timePlans: defaultTimePlans(),
       records: withSeed === false ? [] : clone(KG.Seed.records),
       templates: [clone(M.DEFAULT_TEMPLATE)],
       currentTemplateId: 'default',
@@ -3567,6 +3599,16 @@ var KG = window.KG || (window.KG = {});
     });
     // 标准用时：缺失的模块/子模块用默认值补齐，已有的值原样保留（用户可自行修改）
     state.timePlan = M.normalizeTimePlan(state.timePlan);
+    // v3 起：标准用时按模版独立。把旧 timePlan 迁到 timePlans.default；其它模版首次见到时按各自模版补默认
+    if (!state.timePlans || typeof state.timePlans !== 'object') state.timePlans = {};
+    if (state.timePlan && !state.timePlans.default) state.timePlans.default = state.timePlan;
+    state.templates.forEach(function (tpl) {
+      if (!state.timePlans[tpl.id]) {
+        state.timePlans[tpl.id] = M.normalizeTimePlan(null, tpl);
+      } else {
+        state.timePlans[tpl.id] = M.normalizeTimePlan(state.timePlans[tpl.id], tpl);
+      }
+    });
     if (!Array.isArray(state.records)) state.records = [];
     // 番茄钟设置
     state.settings.pomo = M.normalizePomo(state.settings.pomo);
@@ -3632,6 +3674,14 @@ var KG = window.KG || (window.KG = {});
       }
       state.version = 2;
       v = 2;
+    }
+
+    if (v < 3) {
+      // v2 -> v3：标准用时按模版独立。原 state.timePlan 整体迁到 timePlans.default；
+      // 其它模版在 fillDefaults 里按各自 modules 补默认（不在此处猜结构）
+      state.timePlans = { default: state.timePlan || M.normalizeTimePlan(null) };
+      state.version = 3;
+      v = 3;
     }
 
     state.version = VERSION;
@@ -3785,6 +3835,10 @@ var KG = window.KG || (window.KG = {});
       settings: appState.settings,
       targets: appState.targets,
       timePlan: appState.timePlan,
+      timePlans: appState.timePlans,
+      templates: appState.templates,
+      currentTemplateId: appState.currentTemplateId,
+      moduleLibrary: appState.moduleLibrary,
       records: appState.records,
       plans: appState.plans || [],
       planRules: appState.planRules || [],
@@ -3804,6 +3858,10 @@ var KG = window.KG || (window.KG = {});
       settings: payload.settings || null,
       targets: payload.targets || null,
       timePlan: payload.timePlan || null,
+      timePlans: payload.timePlans || null,
+      templates: payload.templates || null,
+      currentTemplateId: payload.currentTemplateId || null,
+      moduleLibrary: payload.moduleLibrary || null,
       records: payload.records || null,
       plans: payload.plans || null,
       planRules: payload.planRules || null,
@@ -4880,23 +4938,27 @@ var KG = window.KG || (window.KG = {});
     });
   }
 
-  /** 模块正确率趋势用的数据点 */
-  function moduleSeries(records) {
+  /** 模块正确率趋势用的数据点。
+   *  template 可选：传入时按该模版 modules 生成 key 列；不传时按默认 6 模块（向后兼容） */
+  function moduleSeries(records, template) {
     var s = sortedAsc(records);
+    var tmods = template && template.modules ? template.modules : M.MODULES;
     return {
       points: s.map(function (r) {
         var row = { id: r.id, date: r.date, paperName: r.paperName };
-        M.MODULES.forEach(function (def) {
-          row[def.key] = M.moduleAccuracy(r, def.key);
+        tmods.forEach(function (mod) {
+          row[mod.key] = M.moduleAccuracy(r, mod.key);
         });
         return row;
-      })
+      }),
+      modules: tmods
     };
   }
 
-  /** 用时趋势用的数据点（总用时 + 六大模块用时） */
-  function timeSeries(records) {
+  /** 用时趋势用的数据点（总用时 + 模块用时） */
+  function timeSeries(records, template) {
     var s = sortedAsc(records);
+    var tmods = template && template.modules ? template.modules : M.MODULES;
     return s.map(function (r) {
       var row = {
         id: r.id,
@@ -4904,9 +4966,9 @@ var KG = window.KG || (window.KG = {});
         paperName: r.paperName,
         totalTime: r.total ? r.total.time : null
       };
-      M.MODULES.forEach(function (def) {
-        var m = r.modules[def.key];
-        row[def.key] = m ? m.time : null;
+      tmods.forEach(function (mod) {
+        var m = r.modules[mod.key];
+        row[mod.key] = m ? m.time : null;
       });
       return row;
     });
@@ -4978,44 +5040,48 @@ var KG = window.KG || (window.KG = {});
   /**
    * 用时分析表：模块行 + 分组模块的子模块行（顺序与界面一致）
    * focusId 指定「实际用时」看哪一次；不传则用最近一次。
+   * template 可选：传入时只遍历该模版的 modules（自定义模版走这条路径）；
+   *   不传时按默认 6 模块遍历（向后兼容）。
    * 缺失值一律为 null，不产生 NaN。
    */
-  function timeStats(records, timePlan, focusId) {
+  function timeStats(records, timePlan, focusId, template) {
     var s = sortedAsc(records);
     var cur = pickFocus(s, focusId);
-    var plan = M.normalizeTimePlan(timePlan);
+    var plan = M.normalizeTimePlan(timePlan, template);
     var rows = [];
 
-    M.MODULES.forEach(function (def) {
-      var m = cur && cur.modules[def.key] ? cur.modules[def.key] : null;
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    tmods.forEach(function (tmod) {
+      var key = tmod.key;
+      var m = cur && cur.modules[key] ? cur.modules[key] : null;
       rows.push(buildTimeRow({
-        key: def.key,
-        name: def.name,
+        key: key,
+        name: tmod.name,
         level: 'module',
-        plan: plan[def.key].plan,
+        plan: plan[key] ? plan[key].plan : null,
         latestActual: m ? m.time : null,
         latestDate: cur ? cur.date : '',
         latestPaper: cur ? cur.paperName : '',
         records: s,
-        getActual: function (r) { var x = r.modules[def.key]; return x ? x.time : null; }
+        getActual: function (r) { var x = r.modules[key]; return x ? x.time : null; }
       }));
 
-      var subs = M.SUBMODULES[def.key];
+      var subs = tmod.hasSub ? (tmod.subModules || []) : null;
       if (!subs) return;
       subs.forEach(function (sub) {
         var sm = (m && m.subModules && m.subModules[sub.key]) ? m.subModules[sub.key] : null;
         rows.push(buildTimeRow({
-          key: def.key + '.' + sub.key,
+          key: key + '.' + sub.key,
           name: sub.name,
           level: 'sub',
-          parent: def.name,
-          plan: plan[def.key].subs ? plan[def.key].subs[sub.key] : null,
+          parent: tmod.name,
+          plan: plan[key] && plan[key].subs ? plan[key].subs[sub.key] : null,
           latestActual: sm ? sm.time : null,
           latestDate: cur ? cur.date : '',
           latestPaper: cur ? cur.paperName : '',
           records: s,
           getActual: function (r) {
-            var x = r.modules[def.key];
+            var x = r.modules[key];
             if (!x || !x.subModules || !x.subModules[sub.key]) return null;
             return x.subModules[sub.key].time;
           }
@@ -5027,11 +5093,11 @@ var KG = window.KG || (window.KG = {});
   }
 
   /** 总用时达成率 + 超时排行（同样跟随 focusId 选中的那一次） */
-  function timeOverview(records, timePlan, focusId) {
-    var planTotal = M.timePlanTotal(timePlan);
+  function timeOverview(records, timePlan, focusId, template) {
+    var planTotal = M.timePlanTotal(timePlan, template);
     var s = sortedAsc(records);
     var cur = pickFocus(s, focusId);
-    var rows = timeStats(records, timePlan, focusId);
+    var rows = timeStats(records, timePlan, focusId, template);
     var moduleRows = rows.filter(function (r) { return r.level === 'module'; });
 
     var focusTotal = cur && cur.total ? U.toNumber(cur.total.time) : null;
@@ -5290,12 +5356,15 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 模块正确率趋势 ================= */
 
-  function renderModule(records, mode) {
-    var points = S.moduleSeries(records).points;
-    var keys = mode === 'all' ? M.MODULES.map(function (d) { return d.key; }) : [mode];
+  function renderModule(records, mode, template) {
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    var points = S.moduleSeries(records, template).points;
+    var keys = mode === 'all' ? tmods.map(function (d) { return d.key; }) : [mode];
 
     var series = keys.map(function (key) {
-      var def = M.moduleDef(key);
+      var def = null;
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === key) { def = tmods[i]; break; }
+      if (!def) def = M.moduleDef(key) || { name: key };
       return {
         name: def.name,
         type: 'line',
@@ -5343,8 +5412,9 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 用时趋势 ================= */
 
-  function renderTime(records, mode) {
-    var points = S.timeSeries(records);
+  function renderTime(records, mode, template) {
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    var points = S.timeSeries(records, template);
 
     var series = [];
     if (mode === 'total') {
@@ -5360,7 +5430,9 @@ var KG = window.KG || (window.KG = {});
         data: points.map(function (p) { return p.totalTime; })
       });
     } else {
-      var def = M.moduleDef(mode);
+      var def = null;
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === mode) { def = tmods[i]; break; }
+      if (!def) def = M.moduleDef(mode) || { name: mode };
       series.push({
         name: def.name + '用时',
         type: 'line',
@@ -5374,7 +5446,10 @@ var KG = window.KG || (window.KG = {});
       });
     }
 
-    var modeName = mode === 'total' ? '总用时' : (M.moduleDef(mode).name + '用时');
+    var modeName = mode === 'total' ? '总用时' : ((function () {
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === mode) return tmods[i].name + '用时';
+      return M.moduleDef(mode) ? M.moduleDef(mode).name + '用时' : '用时';
+    })());
 
     return {
       grid: baseGrid(),
@@ -5403,9 +5478,10 @@ var KG = window.KG || (window.KG = {});
 
   /* ================= 用时分析：实际 vs 计划 ================= */
 
-  function renderTimeAnalysis(records, timePlan, mode, focusId) {
-    var points = S.timeSeries(records);
-    var plan = M.normalizeTimePlan(timePlan);
+  function renderTimeAnalysis(records, timePlan, mode, focusId, template) {
+    var tmods = template && template.modules ? template.modules : M.MODULES;
+    var points = S.timeSeries(records, template);
+    var plan = M.normalizeTimePlan(timePlan, template);
     var focus = S.pickFocus ? S.pickFocus(S.sortedAsc(records), focusId) : null;
 
     var isTotal = mode === 'total';
@@ -5414,10 +5490,12 @@ var KG = window.KG || (window.KG = {});
     if (isTotal) {
       seriesName = '总用时';
       values = points.map(function (p) { return p.totalTime; });
-      planValue = M.timePlanTotal(plan);
+      planValue = M.timePlanTotal(plan, template);
       color = COLOR_TOTAL_TIME;
     } else {
-      var def = M.moduleDef(mode) || M.MODULES[0];
+      var def = null;
+      for (var i = 0; i < tmods.length; i++) if (tmods[i].key === mode) { def = tmods[i]; break; }
+      if (!def) def = M.moduleDef(mode) || M.MODULES[0];
       seriesName = def.name + '用时';
       values = points.map(function (p) { return p[def.key]; });
       planValue = plan[def.key] ? plan[def.key].plan : null;
@@ -5569,7 +5647,10 @@ var KG = window.KG || (window.KG = {});
    */
   function renderPanel(panelId, records, state) {
     var ok = true;
-    var isEmpty = !records.length;
+    // records 现在按面板各自决定：趋势按 trendTemplateId、用时按 timeTemplateId、统计按默认模版
+    // 仍接受外部传入 records 兼容旧调用，但优先用面板内逻辑
+    state = state || {};
+    if (!records) records = (state.records || []);
 
     function toggle(id, show) {
       var box = document.getElementById(id);
@@ -5578,23 +5659,50 @@ var KG = window.KG || (window.KG = {});
       if (ph) ph.hidden = show;
     }
 
+    var isEmpty = !records.length;
+
     if (panelId === 'panel-trend') {
-      toggle('chart-score', !isEmpty);
-      toggle('chart-module', !isEmpty);
-      toggle('chart-time', !isEmpty);
-      if (isEmpty) return true;
-      ok = apply('chart-score', renderScore(records, state.settings, state.chartFilter.score)) && ok;
-      ok = apply('chart-module', renderModule(records, state.chartFilter.module)) && ok;
-      ok = apply('chart-time', renderTime(records, state.chartFilter.time)) && ok;
+      var tTpl = state.trendTemplateId;
+      var tList = [];
+      if (tTpl === 'all') {
+        // 跨模版合并：按 key 取并集，去重
+        var seen = {};
+        (state.templates || []).forEach(function (tpl) {
+          (tpl.modules || []).forEach(function (m) {
+            if (!seen[m.key]) { seen[m.key] = true; tList.push(m); }
+          });
+        });
+      } else {
+        var tpl0 = M.findTemplate(state.templates, tTpl);
+        tList = tpl0.modules || M.MODULES;
+      }
+      var trendRecs = tTpl === 'all'
+        ? state.records.slice()
+        : state.records.filter(function (r) { return (r.templateId || 'default') === tTpl; });
+      var trendTpl = { modules: tList };
+      var trendEmpty = !trendRecs.length;
+      toggle('chart-score', !trendEmpty);
+      toggle('chart-module', !trendEmpty);
+      toggle('chart-time', !trendEmpty);
+      if (trendEmpty) return true;
+      ok = apply('chart-score', renderScore(trendRecs, state.settings, state.chartFilter.score)) && ok;
+      ok = apply('chart-module', renderModule(trendRecs, state.chartFilter.module, trendTpl)) && ok;
+      ok = apply('chart-time', renderTime(trendRecs, state.chartFilter.time, trendTpl)) && ok;
     } else if (panelId === 'panel-stats') {
-      toggle('chart-stats-module', !isEmpty);
-      if (isEmpty) return true;
-      ok = apply('chart-stats-module', renderModule(records, state.chartFilter.statsModule)) && ok;
+      var statsRecs = state.records.filter(function (r) { return !r.templateId || r.templateId === 'default'; });
+      var statsEmpty = !statsRecs.length;
+      toggle('chart-stats-module', !statsEmpty);
+      if (statsEmpty) return true;
+      ok = apply('chart-stats-module', renderModule(statsRecs, state.chartFilter.statsModule)) && ok;
     } else if (panelId === 'panel-time') {
-      toggle('chart-time-analysis', !isEmpty);
-      if (isEmpty) return true;
+      var timeTplId = state.timeTemplateId || 'default';
+      var timeTpl = M.findTemplate(state.templates, timeTplId);
+      var timeRecs = state.records.filter(function (r) { return (r.templateId || 'default') === timeTplId; });
+      var timePlan = (state.timePlans && state.timePlans[timeTplId]) || M.normalizeTimePlan(null, timeTpl);
+      toggle('chart-time-analysis', !timeRecs.length);
+      if (!timeRecs.length) return true;
       ok = apply('chart-time-analysis',
-        renderTimeAnalysis(records, state.timePlan, state.chartFilter.timeAnalysis, state.timeFocusId)) && ok;
+        renderTimeAnalysis(timeRecs, timePlan, state.chartFilter.timeAnalysis, state.timeFocusId, timeTpl)) && ok;
     }
     return ok;
   }
@@ -6101,7 +6209,22 @@ var KG = window.KG || (window.KG = {});
   }
 
   function renderChartSwitches(state) {
-    var moduleItems = [{ key: 'all', label: '全部' }].concat(M.MODULES.map(function (d) {
+    /* 趋势分析：选「全部」时跨模版合并同名 key；选具体模版时只列该模版 modules */
+    var trendTplId = state.trendTemplateId || 'all';
+    var trendMods;
+    if (trendTplId === 'all') {
+      var seen = {};
+      trendMods = [];
+      (state.templates || []).forEach(function (tpl) {
+        (tpl.modules || []).forEach(function (m) {
+          if (!seen[m.key]) { seen[m.key] = true; trendMods.push(m); }
+        });
+      });
+    } else {
+      var t = M.findTemplate(state.templates, trendTplId);
+      trendMods = t.modules || M.MODULES;
+    }
+    var trendModuleItems = [{ key: 'all', label: '全部' }].concat(trendMods.map(function (d) {
       return { key: d.key, label: d.name };
     }));
     chartSwitch('trend-score-switch', [
@@ -6110,21 +6233,42 @@ var KG = window.KG || (window.KG = {});
       { key: 'score', label: '分数' }
     ], state.chartFilter.score, function (k) { KG.App.setChartFilter('score', k); });
 
-    chartSwitch('trend-module-switch', moduleItems, state.chartFilter.module, function (k) {
+    chartSwitch('trend-module-switch', trendModuleItems, state.chartFilter.module, function (k) {
       KG.App.setChartFilter('module', k);
     });
 
-    chartSwitch('trend-time-switch', [{ key: 'total', label: '总用时' }].concat(M.MODULES.map(function (d) {
+    chartSwitch('trend-time-switch', [{ key: 'total', label: '总用时' }].concat(trendMods.map(function (d) {
       return { key: d.key, label: d.name };
     })), state.chartFilter.time, function (k) { KG.App.setChartFilter('time', k); });
 
-    chartSwitch('stats-module-switch', moduleItems, state.chartFilter.statsModule, function (k) {
+    /* 统计表 / 用时分析仍按各自模版的 modules 列出（统计只服务默认模版，用时分析按选中模版） */
+    var statsMods = M.MODULES;
+    var statsModuleItems = [{ key: 'all', label: '全部' }].concat(statsMods.map(function (d) {
+      return { key: d.key, label: d.name };
+    }));
+    chartSwitch('stats-module-switch', statsModuleItems, state.chartFilter.statsModule, function (k) {
       KG.App.setChartFilter('statsModule', k);
     });
 
-    chartSwitch('time-analysis-switch', [{ key: 'total', label: '总用时' }].concat(M.MODULES.map(function (d) {
+    var timeTplId = state.timeTemplateId || 'default';
+    var timeTpl = M.findTemplate(state.templates, timeTplId);
+    var timeMods = timeTpl.modules || M.MODULES;
+    chartSwitch('time-analysis-switch', [{ key: 'total', label: '总用时' }].concat(timeMods.map(function (d) {
       return { key: d.key, label: d.name };
     })), state.chartFilter.timeAnalysis, function (k) { KG.App.setChartFilter('timeAnalysis', k); });
+  }
+
+  /** 趋势分析的模版下拉：'all' = 跨模版合并 + 各模版可选 */
+  function renderTrendTemplateSelect(state) {
+    var sel = document.getElementById('trend-template');
+    if (!sel) return;
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var opts = ['<option value="all"' + (state.trendTemplateId === 'all' ? ' selected' : '') + '>全部模版（按模块合并）</option>']
+      .concat(templates.map(function (t) {
+        return '<option value="' + esc(t.id) + '"' + (t.id === state.trendTemplateId ? ' selected' : '') + '>' +
+          esc(t.name) + (t.isDefault ? '（默认）' : '') + '</option>';
+      }).join(''));
+    sel.innerHTML = opts.join('');
   }
 
   /* ==================== 套卷表单（新增 / 编辑） ==================== */
@@ -7545,15 +7689,33 @@ var KG = window.KG || (window.KG = {});
     sel.disabled = !o.allRecords.length;
   }
 
+  function renderTimeTemplateSelect(state, selectedId) {
+    var sel = document.getElementById('time-template');
+    if (!sel) return;
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var opts = templates.map(function (t) {
+      return '<option value="' + esc(t.id) + '"' + (t.id === selectedId ? ' selected' : '') + '>' +
+        esc(t.name) + (t.isDefault ? '（默认）' : '') + '</option>';
+    }).join('');
+    sel.innerHTML = opts;
+  }
+
   function renderTimeAnalysis(state) {
-    var defaultRecs = state.records.filter(function (r) { return !r.templateId || r.templateId === 'default'; });
-    var o = S.timeOverview(defaultRecs, state.timePlan, state.timeFocusId);
+    var templates = state.templates || [M.DEFAULT_TEMPLATE];
+    var tplId = state.timeTemplateId;
+    if (!tplId || !templates.some(function (t) { return t.id === tplId; })) tplId = 'default';
+    var tpl = M.findTemplate(templates, tplId);
+    renderTimeTemplateSelect(state, tplId);
+
+    var recs = state.records.filter(function (r) { return (r.templateId || 'default') === tplId; });
+    var plan = state.timePlans && state.timePlans[tplId] ? state.timePlans[tplId] : M.normalizeTimePlan(null, tpl);
+    var o = S.timeOverview(recs, plan, state.timeFocusId, tpl);
 
     renderTimeFocusSelect(state, o);
 
     var focus = o.focus;
     U.setHtml(document.getElementById('time-hint'),
-      defaultRecs.length
+      recs.length
         ? '第 ' + focus.index + '/' + focus.total + ' 套 · ' + (focus.paperName || '未命名') +
           '（' + (focus.date || '—') + '）' + (focus.isLatest ? ' · 最近一次' : '')
         : '');
@@ -7599,7 +7761,7 @@ var KG = window.KG || (window.KG = {});
 
     /* 超时排行 */
     var rankBox = document.getElementById('time-ranking');
-    if (!defaultRecs.length) {
+    if (!recs.length) {
       rankBox.innerHTML = '<div class="hint">暂无数据。</div>';
     } else if (!o.ranking.length) {
       rankBox.innerHTML = '<div class="hint">还没有可比较的模块（需要先设标准用时，且有实际用时）。</div>';
@@ -7620,9 +7782,9 @@ var KG = window.KG || (window.KG = {});
     /* 计划与子模块之和不一致的提示 */
     var note = document.getElementById('time-plan-note');
     var mism = [];
-    M.MODULES.forEach(function (def) {
-      M.timePlanMismatch(state.timePlan, def.key).forEach(function (d) {
-        mism.push(def.name + '：' + d);
+    (tpl.modules || M.MODULES).forEach(function (mod) {
+      M.timePlanMismatch(plan, mod.key, tpl).forEach(function (d) {
+        mism.push(mod.name + '：' + d);
       });
     });
     if (mism.length) {
@@ -7642,10 +7804,10 @@ var KG = window.KG || (window.KG = {});
       '<th class="num">历史平均</th><th class="num">差值</th><th class="num">最大</th><th class="num">最小</th>' +
       '<th class="center">状态</th></tr>';
 
-    if (!defaultRecs.length) {
+    if (!recs.length) {
       table.querySelector('tbody').innerHTML = '';
       empty.hidden = false;
-      empty.innerHTML = '<p>暂无数据，先添加或导入套卷记录。</p>';
+      empty.innerHTML = '<p>该模版下暂无套卷记录，先添加或导入。</p>';
       return;
     }
     empty.hidden = true;
@@ -7667,10 +7829,12 @@ var KG = window.KG || (window.KG = {});
 
   /* ==================== 标准用时编辑 ==================== */
 
-  function openTimePlanForm(state, onSubmit) {
-    var plan = M.normalizeTimePlan(state.timePlan);
+  function openTimePlanForm(state, template, onSubmit) {
+    var tpl = template || M.DEFAULT_TEMPLATE;
+    var existing = (state.timePlans && state.timePlans[tpl.id]) || null;
+    var plan = M.normalizeTimePlan(existing, tpl);
 
-    function rowHtml(key, name, level, value, parent) {
+    function rowHtml(key, name, level, value) {
       return '<tr data-key="' + esc(key) + '" class="' + (level === 'sub' ? 'time-sub-row' : '') + '">' +
         '<td class="time-name' + (level === 'sub' ? ' is-sub' : '') + '">' + esc(name) + '</td>' +
         '<td><input type="number" class="input input-sm" min="0" step="0.5" data-field="plan" ' +
@@ -7679,32 +7843,32 @@ var KG = window.KG || (window.KG = {});
     }
 
     var rows = '';
-    M.MODULES.forEach(function (def) {
-      var p = plan[def.key];
-      rows += rowHtml(def.key, def.name, 'module', p.plan);
-      if (M.SUBMODULES[def.key]) {
-        M.SUBMODULES[def.key].forEach(function (s) {
-          rows += rowHtml(def.key + '.' + s.key, s.name, 'sub', p.subs ? p.subs[s.key] : null);
+    (tpl.modules || M.MODULES).forEach(function (mod) {
+      var p = plan[mod.key] || { plan: null, subs: null };
+      rows += rowHtml(mod.key, mod.name, 'module', p.plan);
+      if (mod.hasSub && mod.subModules) {
+        mod.subModules.forEach(function (s) {
+          rows += rowHtml(mod.key + '.' + s.key, s.name, 'sub', p.subs ? p.subs[s.key] : null);
         });
       }
     });
 
     openModal({
-      title: '编辑标准用时（分钟）',
+      title: '编辑标准用时（分钟）· ' + (tpl.name || '默认模版'),
       size: 'modal-md',
-      body: '<p class="modal-hint">这里是每题型的计划用时，用于「模块四：用时分析」里的达成率、超时排行和趋势图上的标准线。' +
+      body: '<p class="modal-hint">这里是「' + esc(tpl.name || '默认模版') + '」每题型的计划用时，' +
+        '用于「模块四：用时分析」里的达成率、超时排行和趋势图上的标准线。' +
         '留空表示不设标准（该行状态显示「未设标准」，不参与排行）。模块与其子模块都可以单独修改。</p>' +
         '<table class="form-table timeplan-table"><thead><tr><th>模块 / 子模块</th><th>标准用时（分钟）</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>' +
         '<div class="summary-grid" style="margin-top:12px">' +
-          '<div class="summary-item"><span>六大模块标准用时合计</span><b data-plan-total>—</b></div>' +
+          '<div class="summary-item"><span>该模版标准用时合计</span><b data-plan-total>—</b></div>' +
         '</div>',
       footer:
         '<button type="button" class="btn" data-act="reset">恢复默认</button>' +
         '<button type="button" class="btn" data-act="cancel">取消</button>' +
         '<button type="button" class="btn btn-primary" data-act="save">保存标准用时</button>',
       onMount: function (a) {
-        /** 表格每行都有，读出来就是完整结构；空输入框 => null（不设标准） */
         function readRows() {
           var out = {};
           a.root.querySelectorAll('tr[data-key]').forEach(function (tr) {
@@ -7723,7 +7887,7 @@ var KG = window.KG || (window.KG = {});
           return out;
         }
         function refreshTotal() {
-          var v = M.timePlanTotal(readRows());
+          var v = M.timePlanTotal(readRows(), tpl);
           a.root.querySelector('[data-plan-total]').textContent = v === null ? '—' : U.fmtNum(v, 0) + ' 分钟';
         }
         a.body.addEventListener('input', refreshTotal);
@@ -7731,7 +7895,7 @@ var KG = window.KG || (window.KG = {});
 
         a.root.querySelector('[data-act="cancel"]').addEventListener('click', a.close);
         a.root.querySelector('[data-act="reset"]').addEventListener('click', function () {
-          var d = M.normalizeTimePlan(null);
+          var d = M.normalizeTimePlan(null, tpl);
           a.root.querySelectorAll('tr[data-key]').forEach(function (tr) {
             var key = tr.getAttribute('data-key');
             var v;
@@ -7746,7 +7910,7 @@ var KG = window.KG || (window.KG = {});
           toast('已恢复为默认标准用时，点「保存标准用时」生效', 'info');
         });
         a.root.querySelector('[data-act="save"]').addEventListener('click', function () {
-          onSubmit(M.normalizeTimePlan(readRows()));
+          onSubmit(M.normalizeTimePlan(readRows(), tpl));
           a.close();
         });
       }
@@ -8190,6 +8354,7 @@ var KG = window.KG || (window.KG = {});
     openPomoConfigForm: openPomoConfigForm,
     categoryOptionsHtml: categoryOptionsHtml,
     renderChartSwitches: renderChartSwitches,
+    renderTrendTemplateSelect: renderTrendTemplateSelect,
     openRecordForm: openRecordForm,
     openDetail: openDetail,
     openTargetsForm: openTargetsForm,
@@ -8222,6 +8387,7 @@ var KG = window.KG || (window.KG = {});
     settings: Store.defaultSettings(),
     targets: Store.defaultTargets(),
     timePlan: Store.defaultTimePlan(),
+    timePlans: { default: Store.defaultTimePlan() },
     records: [],
     templates: [cloneDeep(M.DEFAULT_TEMPLATE)],
     currentTemplateId: 'default',
@@ -8229,6 +8395,8 @@ var KG = window.KG || (window.KG = {});
     updatedAt: '',
     activeTab: 'records',
     timeFocusId: '',   // 用时分析里选中的套卷；空字符串 = 跟随最近一次
+    timeTemplateId: 'default',  // 用时分析里选中的模版
+    trendTemplateId: 'all',     // 趋势分析里选中的模版（'all' = 跨模版合并）
     plans: [],
     planRules: [],
     sessions: [],
@@ -8295,6 +8463,7 @@ var KG = window.KG || (window.KG = {});
       settings: payload.settings,
       targets: payload.targets,
       timePlan: payload.timePlan,
+      timePlans: payload.timePlans,
       records: payload.records,
       templates: payload.templates,
       currentTemplateId: payload.currentTemplateId,
@@ -8311,6 +8480,7 @@ var KG = window.KG || (window.KG = {});
     state.settings = merged.settings;
     state.targets = merged.targets;
     state.timePlan = merged.timePlan;
+    state.timePlans = merged.timePlans || { default: merged.timePlan };
     state.records = merged.records;
     state.templates = merged.templates;
     state.currentTemplateId = merged.currentTemplateId || 'default';
@@ -8435,6 +8605,7 @@ var KG = window.KG || (window.KG = {});
     UI.renderPlans(state);
     UI.renderTimer(state);
     UI.renderChartSwitches(state);
+    UI.renderTrendTemplateSelect(state);
     renderCharts();
     updateToolbarState();
   }
@@ -8449,7 +8620,7 @@ var KG = window.KG || (window.KG = {});
 
   function renderCharts() {
     ALL_PANELS.forEach(function (pid) {
-      KG.Charts.renderPanel(pid, defaultRecords(), state);
+      KG.Charts.renderPanel(pid, null, state);
     });
   }
 
@@ -8781,6 +8952,7 @@ var KG = window.KG || (window.KG = {});
       settings: state.settings,
       targets: state.targets,
       timePlan: state.timePlan,
+      timePlans: state.timePlans,
       records: state.records,
       templates: state.templates,
       currentTemplateId: state.currentTemplateId,
@@ -8826,6 +8998,7 @@ var KG = window.KG || (window.KG = {});
           settings: data.settings,
           targets: data.targets,
           timePlan: data.timePlan,
+          timePlans: data.timePlans,
           records: data.records,
           templates: data.templates,
           currentTemplateId: data.currentTemplateId,
@@ -8842,6 +9015,7 @@ var KG = window.KG || (window.KG = {});
         state.settings = merged.settings;
         state.targets = merged.targets;
         state.timePlan = merged.timePlan;
+        state.timePlans = merged.timePlans || { default: merged.timePlan };
         state.records = merged.records;
         state.templates = merged.templates;
         state.currentTemplateId = merged.currentTemplateId || 'default';
@@ -9234,12 +9408,41 @@ var KG = window.KG || (window.KG = {});
       UI.openTemplateManager(state, applyTemplateChange);
     });
     document.getElementById('btn-edit-timeplan').addEventListener('click', function () {
-      UI.openTimePlanForm(state, function (timePlan) {
-        state.timePlan = timePlan;
+      var tpl = M.findTemplate(state.templates, state.timeTemplateId || 'default');
+      UI.openTimePlanForm(state, tpl, function (timePlan) {
+        state.timePlan = tpl.id === 'default' ? timePlan : state.timePlan;
+        state.timePlans = state.timePlans || {};
+        state.timePlans[tpl.id] = timePlan;
         persist();
         renderAll();
-        UI.toast('标准用时已保存', 'success');
+        UI.toast('「' + (tpl.name || '默认模版') + '」标准用时已保存', 'success');
       });
+    });
+    var timeTplSel = document.getElementById('time-template');
+    if (timeTplSel) timeTplSel.addEventListener('change', function () {
+      state.timeTemplateId = this.value || 'default';
+      state.timeFocusId = '';
+      renderAll();
+    });
+    var trendTplSel = document.getElementById('trend-template');
+    if (trendTplSel) trendTplSel.addEventListener('change', function () {
+      state.trendTemplateId = this.value || 'all';
+      // 切模版时如果当前选中的模块在新模版里不存在，回到「全部」
+      var filter = state.chartFilter;
+      var mods;
+      if (state.trendTemplateId === 'all') {
+        mods = {};
+        (state.templates || []).forEach(function (t) {
+          (t.modules || []).forEach(function (m) { mods[m.key] = true; });
+        });
+      } else {
+        var t = M.findTemplate(state.templates, state.trendTemplateId);
+        mods = {};
+        (t.modules || []).forEach(function (m) { mods[m.key] = true; });
+      }
+      if (filter.module !== 'all' && !mods[filter.module]) filter.module = 'all';
+      if (filter.time !== 'total' && !mods[filter.time]) filter.time = 'total';
+      renderAll();
     });
 
     // 用时分析：切换要对比的套卷
@@ -9455,6 +9658,7 @@ var KG = window.KG || (window.KG = {});
     state.settings = loaded.settings;
     state.targets = loaded.targets;
     state.timePlan = loaded.timePlan;
+    state.timePlans = loaded.timePlans || { default: loaded.timePlan };
     state.records = loaded.records;
     state.templates = loaded.templates || [cloneDeep(M.DEFAULT_TEMPLATE)];
     state.currentTemplateId = loaded.currentTemplateId || 'default';
