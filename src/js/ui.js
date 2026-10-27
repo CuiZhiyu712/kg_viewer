@@ -2382,6 +2382,11 @@ var KG = window.KG || (window.KG = {});
     };
 
     function modulesEditorHtml() {
+      var used = {};
+      (state.templates || []).forEach(function (t) {
+        if (t.id === template.id) return;  // 自己正在编辑的不算（可能正要取消勾选）
+        (t.modules || []).forEach(function (m) { used[m.key] = true; });
+      });
       var rows = lib().map(function (libMod) {
         var inTpl = null;
         for (var i = 0; i < draft.modules.length; i++) {
@@ -2391,14 +2396,20 @@ var KG = window.KG || (window.KG = {});
         var canSub = !!(libMod.subModules && libMod.subModules.length);
         var subChecked = inTpl && inTpl.hasSub;
         var subs = libMod.subModules || [];
+        var isPreset = !libMod.key || libMod.key.indexOf('lib_') !== 0;
+        var inUse = !!used[libMod.key];
+        var delBtn = (!isPreset && !inUse)
+          ? '<button type="button" class="btn btn-xs btn-danger-ghost" data-act="lib-del" data-key="' + esc(libMod.key) + '">删库</button>'
+          : (isPreset ? '<span class="hint">预设</span>' : '<span class="hint">使用中</span>');
         return '<tr data-key="' + esc(libMod.key) + '">' +
           '<td><label class="cb-line"><input type="checkbox" data-field="selected"' + (checked ? ' checked' : '') + '>' + esc(libMod.name) + '</label></td>' +
           '<td>' + (canSub
             ? '<label class="cb-line"><input type="checkbox" data-field="hasSub"' + (subChecked ? ' checked' : '') + '>含子模块（' + subs.length + ' 个）</label>'
             : '<span class="hint">无可选子模块</span>') + '</td>' +
+          '<td class="ops">' + delBtn + '</td>' +
         '</tr>';
       }).join('');
-      return '<table class="form-table"><thead><tr><th>库模块</th><th>子模块</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      return '<table class="form-table"><thead><tr><th>库模块</th><th>子模块</th><th class="ops">库</th></tr></thead><tbody>' + rows + '</tbody></table>';
     }
 
     function bodyHtml() {
@@ -2450,27 +2461,13 @@ var KG = window.KG || (window.KG = {});
         '<button type="button" class="btn btn-primary" data-act="save">保存</button>',
       onMount: function (a) {
         a.root.querySelector('[data-act="cancel"]').addEventListener('click', a.close);
-        var libAddBtn = a.root.querySelector('[data-act="lib-add"]');
-        if (libAddBtn) libAddBtn.addEventListener('click', function () {
-          syncDraftFromInputs(a.root.querySelector('.modal-body'));
-          var nameEl = a.root.querySelector('[data-lib="name"]');
-          var subsEl = a.root.querySelector('[data-lib="subs"]');
-          var nm = (nameEl.value || '').trim();
-          if (!nm) { toast('请输入模块名', 'error'); return; }
-          var newKey = 'lib_' + U.uuid();
-          var subs = (subsEl.value || '').split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean)
-            .map(function (s) { return { key: 'sub_' + U.uuid(), name: s }; });
-          state.moduleLibrary = state.moduleLibrary || M.MODULE_LIBRARY.slice();
-          state.moduleLibrary.push({ key: newKey, name: nm, subModules: subs.length ? subs : null });
-          a.root.querySelector('.modal-body').innerHTML = bodyHtml();
-          rebind(a);
-        });
         function rebind(a2) {
-          var btn = a2.root.querySelector('[data-act="lib-add"]');
-          if (btn) btn.addEventListener('click', function () {
-            syncDraftFromInputs(a2.root.querySelector('.modal-body'));
-            var nameEl = a2.root.querySelector('[data-lib="name"]');
-            var subsEl = a2.root.querySelector('[data-lib="subs"]');
+          var body = a2.root.querySelector('.modal-body');
+          var libAddBtn = body.querySelector('[data-act="lib-add"]');
+          if (libAddBtn) libAddBtn.addEventListener('click', function () {
+            syncDraftFromInputs(body);
+            var nameEl = body.querySelector('[data-lib="name"]');
+            var subsEl = body.querySelector('[data-lib="subs"]');
             var nm = (nameEl.value || '').trim();
             if (!nm) { toast('请输入模块名', 'error'); return; }
             var newKey = 'lib_' + U.uuid();
@@ -2478,10 +2475,34 @@ var KG = window.KG || (window.KG = {});
               .map(function (s) { return { key: 'sub_' + U.uuid(), name: s }; });
             state.moduleLibrary = state.moduleLibrary || M.MODULE_LIBRARY.slice();
             state.moduleLibrary.push({ key: newKey, name: nm, subModules: subs.length ? subs : null });
-            a2.root.querySelector('.modal-body').innerHTML = bodyHtml();
+            body.innerHTML = bodyHtml();
             rebind(a2);
           });
+          body.querySelectorAll('[data-act="lib-del"]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var key = btn.getAttribute('data-key');
+              var used = [];
+              (state.templates || []).forEach(function (t) {
+                if (t.id === template.id) return;
+                (t.modules || []).forEach(function (m) {
+                  if (m.key === key) used.push(t.name);
+                });
+              });
+              if (used.length) {
+                toast('该模块正被「' + used.join('、') + '」使用，先从那些模版里取消勾选再删', 'error');
+                return;
+              }
+              syncDraftFromInputs(body);
+              draft.modules = draft.modules.filter(function (m) { return m.key !== key; });
+              state.moduleLibrary = (state.moduleLibrary || M.MODULE_LIBRARY.slice()).filter(function (m) {
+                return m.key !== key;
+              });
+              body.innerHTML = bodyHtml();
+              rebind(a2);
+            });
+          });
         }
+        rebind(a);
         a.root.querySelector('[data-act="save"]').addEventListener('click', function () {
           syncDraftFromInputs(a.root.querySelector('.modal-body'));
           var name = (draft.name || '').trim() || '未命名模版';
